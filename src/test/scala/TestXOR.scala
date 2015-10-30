@@ -44,8 +44,8 @@ object TestXOR {
       require(network.layers.head.asInstanceOf[BasicLayer].weight.value != null)
       require(network.layers.head.asInstanceOf[BasicLayer].bias.value.length > 0)
 
-      val trained = new TrainerBuilder(TrainingParam(miniBatch = 10, maxIter = 5000,
-        reuseTemporary = true, storageLevel = StorageLevel.MEMORY_ONLY))
+      val trained = new TrainerBuilder(TrainingParam(miniBatch = 10, maxIter = 5000, dataOnLocal = true,
+        reuseSaveData = true, storageLevel = StorageLevel.MEMORY_ONLY))
         .train(network, train, test, SquaredErr, (x: Boolean) ⇒ if (x) DenseVector(1.0) else DenseVector(0.0), "XORTest")
 
       (0 until 10).foreach { _ ⇒

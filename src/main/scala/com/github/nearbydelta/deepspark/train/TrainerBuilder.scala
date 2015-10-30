@@ -89,7 +89,7 @@ private class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
     }
 
     network.backward(error)
-    network.update(param.miniBatch)
+    network.update(trainSample.size)
 
     val maxEpoch = getMaxEpoch(epoch, patience)
     if (maxEpoch > 0)
@@ -165,7 +165,7 @@ private class FlexibleTrainer[IN, OUT](var network: Network[IN, OUT],
     }
 
     network.backward(error)
-    network.update(param.miniBatch)
+    network.update(trainSample.size)
 
     val maxEpoch = getMaxEpoch(epoch, patience)
     if (maxEpoch > 0)

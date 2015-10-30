@@ -13,13 +13,54 @@ import scala.reflect.io.{File, Path}
 /**
  * Created by bydelta on 15. 10. 4.
  */
+class LedgerWords extends Serializable with KryoSerializable {
+  lazy final val unkID = words(LedgerModel.UnkAll)
+  lazy final val padID = words(LedgerModel.PAD)
+  lazy final val size = words.size
+  val words = mutable.HashMap[String, Int]()
+
+  def indexOf(str: String): Int = {
+    words.get(str) match {
+      case Some(id) ⇒ id
+      case None ⇒
+        words.get(str.getShape) match {
+          case Some(id) ⇒ id
+          case None ⇒ unkID
+        }
+    }
+  }
+
+  // Please change word layer if change this.
+  override def write(kryo: Kryo, output: Output): Unit = {
+    output.writeInt(words.size)
+    words.foreach {
+      case (key, id) ⇒
+        output.writeString(key)
+        output.writeInt(id)
+    }
+  }
+  
+  override def read(kryo: Kryo, input: Input): Unit = {
+    words.clear()
+    val size = input.readInt()
+    (0 until size).foreach { _ ⇒
+      val str = input.readString()
+      val id = input.readInt()
+      words += (str → id)
+    }
+  }
+}
+
 class LedgerModel extends Serializable with KryoSerializable {
-  lazy final val unkID = wordmap(LedgerModel.UnkAll)
-  lazy final val padID = wordmap(LedgerModel.PAD)
-  lazy final val dimension = vectors.head.size
-  lazy final val size = vectors.size
-  val wordmap = mutable.HashMap[String, Int]()
   val vectors = mutable.ArrayBuffer[DataVec]()
+  var wordmap = new LedgerWords()
+
+  lazy final val dimension = vectors.head.size
+  lazy final val unkID = wordmap.unkID
+  lazy final val padID = wordmap.padID
+  lazy final val size = wordmap.size
+
+  def indexOf(str: String) = wordmap.indexOf(str: String)
 
   def saveTo(file: Path) =
     try {
@@ -32,11 +73,11 @@ class LedgerModel extends Serializable with KryoSerializable {
 
   // Please change word layer if change this.
   override def write(kryo: Kryo, output: Output): Unit = {
-    output.writeInt(wordmap.size)
-    wordmap.foreach {
-      case (key, id) ⇒
-        output.writeString(key)
-        kryo.writeClassAndObject(output, vectorAt(id))
+    kryo.writeClassAndObject(output, wordmap)
+    output.writeInt(vectors.size)
+    vectors.foreach {
+      case vec ⇒
+        kryo.writeClassAndObject(output, vec)
     }
   }
 
@@ -45,7 +86,7 @@ class LedgerModel extends Serializable with KryoSerializable {
   def saveAsTextFile(file: Path) =
     try {
       val bos = File(file).bufferedWriter()
-      wordmap.foreach {
+      wordmap.words.foreach {
         case (word, id) ⇒
           val vec = vectors(id)
           bos.write(word + " " + vec.data.mkString(" ") + "\n")
@@ -60,37 +101,24 @@ class LedgerModel extends Serializable with KryoSerializable {
     model
   }
 
-  def set(map: mutable.HashMap[String, Int], vec: mutable.ArrayBuffer[DataVec]): this.type = {
-    wordmap ++= map
+  def set(map: LedgerWords, vec: mutable.ArrayBuffer[DataVec]): this.type = {
+    this.wordmap = map
     vectors ++= vec
     this
   }
 
   override def read(kryo: Kryo, input: Input): Unit = {
-    wordmap.clear()
+    wordmap = kryo.readClassAndObject(input).asInstanceOf[LedgerWords]
     vectors.clear()
     val size = input.readInt()
-    (0 until size).foreach { id ⇒
-      val str = input.readString()
+    (0 until size).foreach { _ ⇒
       val vec = kryo.readClassAndObject(input).asInstanceOf[DataVec]
-      wordmap += (str → id)
       vectors += vec
     }
   }
 
   def apply(str: String): DataVec = {
     vectorAt(indexOf(str))
-  }
-
-  def indexOf(str: String): Int = {
-    wordmap.get(str) match {
-      case Some(id) ⇒ id
-      case None ⇒
-        wordmap.get(str.getShape) match {
-          case Some(id) ⇒ id
-          case None ⇒ unkID
-        }
-    }
   }
 }
 
@@ -115,7 +143,7 @@ object LedgerModel {
     } else {
       val br = file.lines(Codec.UTF8)
 
-      val wordmap = mutable.HashMap[String, Int]()
+      val wordmap = new LedgerWords()
       val vectors = mutable.ArrayBuffer[DataVec]()
       val unkCounts = mutable.HashMap[String, (Int, Int)]()
       val unkvecs = mutable.ArrayBuffer[DataVec]()
@@ -130,7 +158,7 @@ object LedgerModel {
         val word = splits(0)
         val vector = DenseVector(splits.tail.map(_.toDouble))
 
-        wordmap += word → lineNo
+        wordmap.words += word → lineNo
         vectors += vector
         lineNo += 1
 
@@ -161,13 +189,13 @@ object LedgerModel {
         case (shape, (id, count)) if count > shapeThreshold ⇒
           val matx = unkvecs(id)
           matx :/= count.toDouble
-          wordmap += shape → vectors.length
+          wordmap.words += shape → vectors.length
           vectors += matx
         case _ ⇒
       }
 
-      wordmap += PAD → lineNo
-      vectors += vectors(wordmap(UnkAll)).copy
+      wordmap.words += PAD → lineNo
+      vectors += vectors(wordmap.words(UnkAll)).copy
 
       val model = new LedgerModel().set(wordmap, vectors)
       logger info s"Start to save GloVe (Dimension ${model.dimension}, Size ${model.size})"

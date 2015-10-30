@@ -8,6 +8,7 @@ import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.network.Network
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.rdd.RDD
+import org.apache.spark.util.random.BernoulliSampler
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
@@ -48,27 +49,42 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
     case _: Throwable ⇒ 80
   }
 
-  @transient protected val batchSampler =
-    new Iterator[Seq[(IN, EXP)]] {
-      val sampleSize = (100000 / param.miniBatch) * sampleFraction
-      var temp = trainSet.sample(withReplacement = true, fraction = sampleSize)
-        .collect().toSeq.sliding(param.miniBatch, param.miniBatch)
-      var tempF: Future[Seq[(IN, EXP)]] = attachNext()
+  class RDDSampler extends Iterator[Seq[(IN, EXP)]] {
+    val sampleSize = (100000 / param.miniBatch) * sampleFraction
+    var temp = trainSet.sample(withReplacement = true, fraction = sampleSize)
+      .collect().toIterator.sliding(param.miniBatch, param.miniBatch)
+    var tempF: Future[Seq[(IN, EXP)]] = attachNext()
 
-      def attachNext() =
-        trainSet.sample(withReplacement = true, fraction = sampleSize).collectAsync()
+    def attachNext() =
+      trainSet.sample(withReplacement = true, fraction = sampleSize).collectAsync()
 
-      override def hasNext: Boolean = true
+    override def hasNext: Boolean = true
 
-      override def next(): Seq[(IN, EXP)] = {
-        val next = temp.next()
-        if (!temp.hasNext) {
-          temp = Await.result(tempF, 1.hour).sliding(param.miniBatch, param.miniBatch)
-          tempF = attachNext()
-        }
-        next
+    override def next(): Seq[(IN, EXP)] = {
+      val next = temp.next()
+      if (!temp.hasNext) {
+        temp = Await.result(tempF, 1.hour).toIterator.sliding(param.miniBatch, param.miniBatch)
+        tempF = attachNext()
       }
+      next
     }
+  }
+
+  class LocalSampler extends Iterator[Seq[(IN, EXP)]] {
+    val localData = Await.result(trainSet.collectAsync(), 1.hour).toIterator
+    val sampler = new BernoulliSampler[(IN, EXP)](sampleFraction)
+
+    override def hasNext: Boolean = true
+
+    override def next(): Seq[(IN, EXP)] = {
+      sampler.sample(localData).toSeq.take(param.miniBatch)
+    }
+  }
+
+  @transient protected val batchSampler =
+    if (param.dataOnLocal) new LocalSampler
+    else new RDDSampler
+
 
   private final def printProgress(iter: Int, patience: Int, lossE: Double, lossW: Double): Unit = {
     val wait = patience / param.maxIter.toFloat
@@ -116,7 +132,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
       logger info f"($name) Every $validationPeriod%5d Epoch (${param.validationFreq * 100}%6.2f%% of TrainingSet; " +
         f"${param.miniBatch * validationPeriod}%6d Instances), validation process will be submitted."
 
-      if (file.exists && param.reuseTemporary) {
+      if (file.exists && param.reuseSaveData) {
         loadStatus()
         logger info f"We detected a network saved at $bestIter%4d Iteration." +
           f"with loss $prevLossE%8.5f + $prevLossW%8.5f. We use it as initial value. Loss will be reset."

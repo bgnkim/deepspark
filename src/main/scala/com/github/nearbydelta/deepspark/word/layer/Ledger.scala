@@ -49,14 +49,7 @@ trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
 
   override def write(kryo: Kryo, output: Output): Unit = {
     kryo.writeClassAndObject(output, builder)
-    output.writeInt(model.size)
-
-    model.wordmap.foreach {
-      case (key, id) ⇒
-        val vec = vectorOf(id)
-        output.writeString(key)
-        kryo.writeClassAndObject(output, vec)
-    }
+    model.write(kryo, output)
     super.write(kryo, output)
   }
 

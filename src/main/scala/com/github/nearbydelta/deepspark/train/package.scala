@@ -34,7 +34,8 @@ package object train {
                            lossThreshold: Double = 0.0001,
                            validationFreq: Double = 1.0,
                            miniBatch: Int = 10,
-                           reuseTemporary: Boolean = false,
+                           reuseSaveData: Boolean = false,
+                           dataOnLocal: Boolean = false,
                            storageLevel: StorageLevel = StorageLevel.MEMORY_ONLY)
     extends Serializable
 

@@ -4,7 +4,7 @@ import com.github.nearbydelta.deepspark.layer.BasicLayer
 import com.github.nearbydelta.deepspark.network.{GeneralNetwork, Network}
 import com.github.nearbydelta.deepspark.train.{TrainerBuilder, TrainingParam}
 import com.github.nearbydelta.deepspark.word.layer.RNNLedger
-import com.github.nearbydelta.deepspark.word.{LedgerModel, LedgerModel$, LedgerAdaGrad}
+import com.github.nearbydelta.deepspark.word.{LedgerAdaGrad, LedgerModel, LedgerWords}
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{SparkConf, SparkContext}
 
@@ -22,11 +22,11 @@ object TestEmbedding {
       .set("spark.akka.frameSize", "50")
     val sc = new SparkContext(conf)
 
-    val letters = mutable.HashMap[String, Int]()
+    val letters = new LedgerWords()
     val vectors = mutable.ArrayBuffer[DataVec]()
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ".sliding(1).foreach{
       letter ⇒
-        letters += letter → letters.size
+        letters.words += letter → letters.size
         vectors += DenseVector.rand(5)
     }
 
@@ -58,7 +58,7 @@ object TestEmbedding {
       "Y" → DenseVector(0.0, 0.0, 0.0, 0.0, 1.0),
       "Z" → DenseVector(0.0, 0.0, 0.0, 0.0, 1.0)).combinations(3).map{
       it ⇒
-        val word = it.map(x ⇒ letters(x._1)).toArray
+        val word = it.map(x ⇒ letters.indexOf(x._1)).toArray
         val vec = it.map(_._2).reduceLeft[DataVec] {
           case (left, right) ⇒
             val l: DataVec = left * 0.8
@@ -68,7 +68,7 @@ object TestEmbedding {
         word → vec
     }.toSeq
 
-    val vectorA = vectors(letters("A")).copy
+    val vectorA = vectors(letters.indexOf("A")).copy
 
     val data = sc.parallelize(example)
 
@@ -88,7 +88,7 @@ object TestEmbedding {
         .add(new BasicLayer withActivation Softmax withInput 10 withOutput 5)
 
       val trained = new TrainerBuilder(TrainingParam(miniBatch = 10, maxIter = 1000,
-        reuseTemporary = true, storageLevel = StorageLevel.MEMORY_ONLY))
+        reuseSaveData = true, storageLevel = StorageLevel.MEMORY_ONLY))
         .train(network, data, data, SquaredErr, "EmbeddingTest")
 
       val file = File("testfile")

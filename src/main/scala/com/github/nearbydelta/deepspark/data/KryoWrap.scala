@@ -5,7 +5,7 @@ import com.esotericsoftware.kryo.Serializer
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.layer._
 import com.github.nearbydelta.deepspark.network.{GeneralNetwork, SimpleNetwork}
-import com.github.nearbydelta.deepspark.word.{LedgerSGD, LedgerAdaGrad, LedgerAdaDelta, LedgerModel}
+import com.github.nearbydelta.deepspark.word._
 import com.github.nearbydelta.deepspark.word.layer._
 import com.twitter.chill.{Kryo, ScalaKryoInstantiator}
 
@@ -18,6 +18,7 @@ object KryoWrap {
 
   def init(kryo: Kryo): Unit = {
     // Please, preserve this ordering.
+    kryo.register(classOf[LedgerWords])
     kryo.register(classOf[LedgerModel])
 
     // To register specialized types in scala, instantiate things
