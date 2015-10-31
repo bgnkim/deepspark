@@ -12,10 +12,6 @@ import scala.reflect.{ClassTag, classTag}
  * Created by bydelta on 15. 10. 16.
  */
 object TestConcat {
-  class ConcatLayer extends NetworkConcatLayer[DataVec]{
-    override implicit protected val evidenceI: ClassTag[Array[DataVec]] = classTag[Array[DataVec]]
-  }
-
   def main(args: Array[String]) {
     val conf = new SparkConf().setMaster("local[5]").setAppName("TestXOR")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
@@ -50,7 +46,7 @@ object TestConcat {
     val test = train
 
     try {
-      val builder = new AdaGrad(l2decay = 0.001, rate = 0.1)
+      val builder = new AdaGrad(l2decay = 0.00001, rate = 0.01)
       val input1 = new SimpleNetwork[DataVec]()
         .initiateBy(builder)
         .add(new BasicLayer withInput 2 withOutput 4)
@@ -67,7 +63,7 @@ object TestConcat {
 
       require(network.NOut == 1)
 
-      val trained = new TrainerBuilder(TrainingParam(miniBatch = 100, maxIter = 100, storageLevel = StorageLevel.MEMORY_ONLY))
+      val trained = new TrainerBuilder(TrainingParam(miniBatch = 10, maxIter = 1000, storageLevel = StorageLevel.MEMORY_ONLY))
         .train(network, train, test, SquaredErr, (x: Boolean) ⇒ if (x) DenseVector(1.0) else DenseVector(0.0), "XORTest")
 
       (0 until 10).foreach { _ ⇒
@@ -78,5 +74,9 @@ object TestConcat {
     }finally {
       sc.stop()
     }
+  }
+
+  class ConcatLayer extends NetworkConcatLayer[DataVec]{
+    override implicit protected val evidenceI: ClassTag[Array[DataVec]] = classTag[Array[DataVec]]
   }
 }

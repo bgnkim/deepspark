@@ -8,12 +8,12 @@ import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.network.Network
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.util.random.BernoulliSampler
 
+import scala.concurrent._
 import scala.concurrent.duration._
-import scala.concurrent.{Await, Future}
 import scala.reflect.ClassTag
 import scala.reflect.io.File
+import scala.util.Random
 
 /**
  * Created by bydelta on 15. 10. 29.
@@ -71,13 +71,17 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
   }
 
   class LocalSampler extends Iterator[Seq[(IN, EXP)]] {
-    val localData = Await.result(trainSet.collectAsync(), 1.hour).toIterator
-    val sampler = new BernoulliSampler[(IN, EXP)](sampleFraction)
+    val localData = Await.result(trainSet.collectAsync(), 1.hour)
+    var temp = Random.shuffle(localData).sliding(param.miniBatch, param.miniBatch)
 
     override def hasNext: Boolean = true
 
     override def next(): Seq[(IN, EXP)] = {
-      sampler.sample(localData).toSeq.take(param.miniBatch)
+      val next = temp.next()
+      if (!temp.hasNext){
+        temp = Random.shuffle(localData).sliding(param.miniBatch, param.miniBatch)
+      }
+      next
     }
   }
 
@@ -92,7 +96,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
     val footer = f" E + W = $lossE%7.5f + $lossW%7.5f "
     val secondFooter = f" vs $prevLossE%7.5f + $prevLossW%7.5f @ $bestIter%4d "
 
-    val buf = new StringBuilder(s"\033[2A\033[${columns}D\033[2K \033[1;33m$header\033[46;36m")
+    val buf = new StringBuilder(s"\033[3A\033[${columns}D\033[3K \033[1;33m$header\033[46;36m")
     val total = columns - header.length - footer.length + 10
     val len = Math.floor(wait * total).toInt
     val step = Math.floor(iter / param.maxIter.toFloat * total).toInt
@@ -101,19 +105,25 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
     buf.append(" " * (len - step))
     buf.append("\033[0m]\033[34m")
     if (total > len) buf.append(s"\033[${total - len}C")
-    buf.append(s"$footer\033[0m\n\033[2K")
+    buf.append(s"$footer\033[0m\n\033[3K")
 
-    val now = System.currentTimeMillis()
-    val remainA = (now - startAt) / iter * patience
-    val etaA = startAt + remainA
-    val calA = dateFormatter.format(new Date(etaA))
-    val remainB = (now - startAt) / iter * param.maxIter
-    val etaB = startAt + remainB
-    val calB = dateFormatter.format(new Date(etaB))
-    val timeline = s" END $calA   ~   $calB"
+    val timeline =
+      if(iter > 1.0) {
+        val now = System.currentTimeMillis()
+        val remainA = (now - startAt) / iter * patience
+        val etaA = startAt + remainA
+        val calA = dateFormatter.format(new Date(etaA))
+        val remainB = (now - startAt) / iter * param.maxIter
+        val etaB = startAt + remainB
+        val calB = dateFormatter.format(new Date(etaB))
+        s" END $calA   ~   $calB"
+      }else{
+        " END: CALCULATING..."
+      }
     buf.append(timeline)
     buf.append(" " * (columns - timeline.length - secondFooter.length))
     buf.append(secondFooter)
+    buf.append("\n")
 
     println(buf.result())
   }
@@ -140,7 +150,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
       }else
         saveStatus()
       network.setUpdatable(true)
-      println("Start training...\n Estimated Time: NONE")
+      println("Start training...\n Estimated Time: NONE\n")
 
       val epoch = bestIter * validationPeriod
       val patience = Math.min(Math.max(5, bestIter) * (param.waitAfterUpdate + 1), param.maxIter)
@@ -156,8 +166,8 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
       network
     }
 
-  private final def saveStatus() = {
-    val output = new Output(file.outputStream())
+  private final def saveStatus(path: File = file) = {
+    val output = new Output(path.outputStream())
     val kryo = KryoWrap.kryo
     output.writeInt(bestIter)
     output.writeDouble(prevLossE)
@@ -186,9 +196,12 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
     var prevloss = prevLossW + prevLossE
 
     if ((epoch + 1) % validationPeriod == 0) {
+      network.broadcast(trainSet.context)
       val train = getValidationErr
       val weight = network.loss
       val loss = train + weight
+      network.unbroadcast()
+
       if (loss.isNaN || loss.isInfinity) {
         logger info s"Because of some issue, loss became $loss (train $train, weight $weight). Please check."
         logger info s"Automatically reload latest successful setup.\n\n"
@@ -206,6 +219,11 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
         }
       }
       printProgress(iter, nPatience, train, weight)
+    }
+
+    if (epoch % 10 == 0){
+      val remainder = epoch % validationPeriod
+      print(f"\033[${columns}D $remainder%10d of $validationPeriod%10d epoch ...")
     }
 
     if (iter <= nPatience && (prevloss >= param.lossThreshold || iter < 5)) {

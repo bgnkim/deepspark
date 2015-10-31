@@ -4,6 +4,7 @@ import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.layer.InputLayer
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 
 import scala.collection.parallel.ParSeq
@@ -18,6 +19,16 @@ class GeneralNetwork[In, Out](var inputLayer: InputLayer[In, _]) extends Network
   override def setUpdatable(bool: Boolean): Network[In, Out] = {
     inputLayer.setUpdatable(bool)
     super.setUpdatable(bool)
+  }
+
+  override def unbroadcast(): Unit = {
+    inputLayer.unbroadcast()
+    super.unbroadcast()
+  }
+
+  override def broadcast(sc: SparkContext): Unit = {
+    inputLayer.broadcast(sc)
+    super.broadcast(sc)
   }
 
   override def NOut: Int =

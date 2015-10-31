@@ -6,6 +6,8 @@ import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.data.{Matrix, _}
 
+import scala.collection.parallel.ParSeq
+
 /**
  * __Layer__ : An Radial Basis Function Layer, with its radial basis.
  */
@@ -22,7 +24,7 @@ class RBFLayer extends TransformLayer {
   override def initiateBy(builder: WeightBuilder): this.type = {
     if (builder != null && NIn > 0 && NOut > 0) {
       builder.buildVector(epsilon, NOut)
-      builder.buildMatrix(centers, NIn, NOut)
+      builder.buildMatrix(centers, NIn, NOut, noReg = true)
     }
 
     this
@@ -61,8 +63,7 @@ class RBFLayer extends TransformLayer {
     super.read(kryo, input)
   }
 
-  override def loss: Double =
-    epsilon.loss + centers.loss
+  override def loss: Double = epsilon.loss
 
   override def update(count: Int): Unit = {
     epsilon.update(count)
@@ -101,46 +102,49 @@ class RBFLayer extends TransformLayer {
    *       For the computation rules, see "Matrix Cookbook" from MIT.
    *       </p>
    *
-   * @param in input
-   * @param error to be propagated ( <code>dG / dF</code> is propagated from higher layer )
    * @return propagated error (in this case, <code>dG/dx</code> )
    */
-  def backward(in: DataVec, out: DataVec, error: DataVec): DataVec = {
-    val diff = centers.value(::, *) - in
-    val dist = norm.apply(diff, Axis._0).toDenseVector
-    /*
+  def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
+    val (dE, dC, external) = seq.map { case ((in, out), error) ⇒
+      val diff = centers.value(::, *) - in
+      val dist = norm.apply(diff, Axis._0).toDenseVector
+      /*
      * Error, i.e. dGdF is NOut-dim vector.
      * act.derivative is NOut x NOut matrix.
      * Actually, dFdX is NOut-dim square matrix. Since non-diag is zero,
      * dFdX * dGdF can be implemented with elementwise computation.
      * Thus dGdX = dFdX * dGdF, NOut-dim vector
      */
-    val dGdX: DataVec = act.derivative(out) :* error
+      val dGdX: DataVec = act.derivative(out) :* error
 
-    /*
+      /*
      * dX_i/dE_i = 2 * e_i * ||x - C_i||^2, otherwise 0.
      * Then dGdE = dXdE * dGdX is NOut-dim vector.
      * Simplified version will be, elementwise multiplication between diag(dXdE) and dGdX
      */
-    val dXdE = 2.0 * (epsilon.value :* pow(dist, 2.0))
-    val dGdE = dXdE :* dGdX
-    epsilon updateBy dGdE
+      val dXdE = 2.0 * (epsilon.value :* pow(dist, 2.0))
+      val dGdE = dXdE :* dGdX
 
-    /*
+      /*
      * dX_i/dC_i = 2 * e_i^2 * (x - C_i), otherwise 0 vector.
      * dX/dC_i became all zero except i-th column is dX_i/dC_i.
      * Therefore, while computing dGdC,
      * dG/dC_i = dGdX * dXdC_i = dGdX(i) * dXdC_i.
      */
-    val factor = 2.0 * (pow(epsilon.value, 2.0) :* dGdX)
-    val dGdC = diff(*, ::) :* factor
+      val factor = 2.0 * (pow(epsilon.value, 2.0) :* dGdX)
+      val dGdC = diff(*, ::) :* factor
 
-    centers updateBy dGdC
-
-    /*
+      /*
      * Note that, dX_i/dC_i = - dX_i/dx, and
      * dX/dx = - \sum dX_i/dC_i.
      */
-    sum(dGdC, Axis._1)
+      val dGdx = sum(dGdC, Axis._1)
+      (dGdE, dGdC, dGdx)
+    }.unzip3
+
+    epsilon updateBy dE.reduce(_ += _)
+    centers updateBy dC.reduce(_ += _)
+
+    external.seq
   }
 }

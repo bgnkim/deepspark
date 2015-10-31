@@ -5,7 +5,6 @@ import breeze.linalg.operators._
 import breeze.numerics._
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, KryoSerializable}
-import org.apache.spark.SparkContext
 
 /**
  * __Trait__ that describes the algorithm for weight update
@@ -14,44 +13,46 @@ import org.apache.spark.SparkContext
  */
 trait WeightBuilder extends Serializable with KryoSerializable {
   final def buildMatrix(weight: Weight[Matrix], row: Int, col: Int,
-                        range: (Double, Double) = (1e-2, 2e-2)): Weight[Matrix] = {
+                        range: (Double, Double) = (1e-2, 2e-2),
+                        noReg: Boolean = false): Weight[Matrix] = {
     if (weight.isDefined) {
-      buildTo(weight, weight.value)
+      buildTo(weight, weight.value, noReg)
     } else {
       val (from, to) = range
       val matx = DenseMatrix.rand[Double](row, col)
       matx :*= (to - from)
       matx :+= from
-      buildTo(weight, matx)
+      buildTo(weight, matx, noReg)
     }
   }
 
   final def buildVector(weight: Weight[DataVec], row: Int,
-                        range: (Double, Double) = (1e-2, 2e-2)): Weight[DataVec] = {
+                        range: (Double, Double) = (1e-2, 2e-2),
+                        noReg: Boolean = false): Weight[DataVec] = {
     if (weight.isDefined) {
-      buildTo(weight, weight.value)
+      buildTo(weight, weight.value, noReg)
     } else {
       val (from, to) = range
       val matx = DenseVector.rand[Double](row)
       matx :*= (to - from)
       matx :+= from
-      buildTo(weight, matx)
+      buildTo(weight, matx, noReg)
     }
   }
 
-  def getUpdater(value: Matrix, delta: Matrix): Algorithm[Matrix]
+  protected def getUpdater(value: Matrix, delta: Matrix, noReg: Boolean): Algorithm[Matrix]
 
-  def getUpdater(value: DataVec, delta: DataVec): Algorithm[DataVec]
+  protected def getUpdater(value: DataVec, delta: DataVec, noReg: Boolean): Algorithm[DataVec]
 
-  def buildTo(weight: Weight[Matrix], value: Matrix): Weight[Matrix] = {
+  private def buildTo(weight: Weight[Matrix], value: Matrix, noReg: Boolean): Weight[Matrix] = {
     weight withValue value
-    weight withUpdater getUpdater(value, weight.getDelta)
+    weight withUpdater getUpdater(value, weight.getDelta, noReg)
     weight
   }
 
-  def buildTo(weight: Weight[DataVec], value: DataVec): Weight[DataVec] = {
+  private def buildTo(weight: Weight[DataVec], value: DataVec, noReg: Boolean): Weight[DataVec] = {
     weight withValue value
-    weight withUpdater getUpdater(value, weight.getDelta)
+    weight withUpdater getUpdater(value, weight.getDelta, noReg)
     weight
   }
 }
@@ -133,7 +134,7 @@ trait Algorithm[X] {
   protected val x: X
   protected val dW: X
 
-  def l2factor: Double
+  val l2factor: Double
 
   /**
    * Execute the algorithm for given __Δweight__ and __weights__
@@ -171,7 +172,8 @@ class AdaDelta(var l2decay: Double = 0.0001,
   }
 
   class Updater[X](override protected val x: X,
-                   override protected val dW: X)
+                   override protected val dW: X,
+                   override val l2factor: Double)
                   (implicit private val zero: Zero[X],
                    implicit private val elemMul: OpMulScalar.Impl2[X, X, X],
                    implicit private val mul: OpMulScalar.Impl2[X, Double, X],
@@ -184,8 +186,6 @@ class AdaDelta(var l2decay: Double = 0.0001,
                    implicit private val set: OpSet.InPlaceImpl2[X, Double]) extends Algorithm[X] {
     private lazy val gradSq = zero(x)
     private lazy val deltaSq = zero(x)
-
-    override def l2factor = l2decay
 
     /**
      * Execute the algorithm for given __Δ(weight)__ and __weights__
@@ -214,11 +214,11 @@ class AdaDelta(var l2decay: Double = 0.0001,
     }
   }
 
-  override def getUpdater(value: Matrix, delta: Matrix): Algorithm[Matrix] =
-    new Updater[Matrix](value, delta)
+  override protected def getUpdater(value: Matrix, delta: Matrix, noReg: Boolean): Algorithm[Matrix] =
+    new Updater[Matrix](value, delta, if (noReg) 0.0 else l2decay)
 
-  override def getUpdater(value: DataVec, delta: DataVec): Algorithm[DataVec] =
-    new Updater[DataVec](value, delta)
+  override protected def getUpdater(value: DataVec, delta: DataVec, noReg: Boolean): Algorithm[DataVec] =
+    new Updater[DataVec](value, delta, if (noReg) 0.0 else l2decay)
 
 }
 
@@ -252,7 +252,8 @@ class AdaGrad(var rate: Double = 0.6,
   }
 
   class Updater[X](override protected val x: X,
-                   override protected val dW: X)
+                   override protected val dW: X,
+                   override val l2factor: Double)
                   (implicit private val zero: Zero[X],
                    implicit private val elemMul: OpMulScalar.Impl2[X, X, X],
                    implicit private val mul: OpMulScalar.Impl2[X, Double, X],
@@ -264,8 +265,6 @@ class AdaGrad(var rate: Double = 0.6,
                    implicit private val set: OpSet.InPlaceImpl2[X, Double]) extends Algorithm[X] {
     /** accumulated history of parameter updates */
     private lazy val history = zero(x)
-
-    override def l2factor = l2decay
 
     /**
      * Execute the algorithm for given __Δweight__ and __weights__
@@ -284,11 +283,11 @@ class AdaGrad(var rate: Double = 0.6,
   }
 
 
-  override def getUpdater(value: Matrix, delta: Matrix): Algorithm[Matrix] =
-    new Updater[Matrix](value, delta)
+  override protected def getUpdater(value: Matrix, delta: Matrix, noReg: Boolean): Algorithm[Matrix] =
+    new Updater[Matrix](value, delta, if (noReg) 0.0 else l2decay)
 
-  override def getUpdater(value: DataVec, delta: DataVec): Algorithm[DataVec] =
-    new Updater[DataVec](value, delta)
+  override protected def getUpdater(value: DataVec, delta: DataVec, noReg: Boolean): Algorithm[DataVec] =
+    new Updater[DataVec](value, delta, if (noReg) 0.0 else l2decay)
 }
 
 /**
@@ -321,7 +320,8 @@ class StochasticGradientDescent(var rate: Double = 0.03,
   }
 
   class Updater[X](override protected val x: X,
-                   override protected val dW: X)
+                   override protected val dW: X,
+                   override val l2factor: Double)
                   (implicit private val zero: Zero[X],
                    implicit private val mul: OpMulScalar.Impl2[X, Double, X],
                    implicit private val mulInplace: OpMulScalar.InPlaceImpl2[X, Double],
@@ -330,8 +330,6 @@ class StochasticGradientDescent(var rate: Double = 0.03,
                    implicit private val set: OpSet.InPlaceImpl2[X, Double]) extends Algorithm[X] {
     /** the last update of parameters */
     private lazy val lastDelta: X = if (momentum != 0) zero(x) else null.asInstanceOf[X]
-
-    override def l2factor = l2decay
 
     /**
      * Execute the algorithm for given __Δweight__ and __weights__
@@ -353,9 +351,9 @@ class StochasticGradientDescent(var rate: Double = 0.03,
   }
 
 
-  override def getUpdater(value: Matrix, delta: Matrix): Algorithm[Matrix] =
-    new Updater[Matrix](value, delta)
+  override protected def getUpdater(value: Matrix, delta: Matrix, noReg: Boolean): Algorithm[Matrix] =
+    new Updater[Matrix](value, delta, if (noReg) 0.0 else l2decay)
 
-  override def getUpdater(value: DataVec, delta: DataVec): Algorithm[DataVec] =
-    new Updater[DataVec](value, delta)
+  override protected def getUpdater(value: DataVec, delta: DataVec, noReg: Boolean): Algorithm[DataVec] =
+    new Updater[DataVec](value, delta, if (noReg) 0.0 else l2decay)
 }

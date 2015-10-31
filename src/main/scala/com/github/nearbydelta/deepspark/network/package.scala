@@ -4,6 +4,7 @@ import com.esotericsoftware.kryo.KryoSerializable
 import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.layer._
 import com.twitter.chill.{Input, Kryo, Output}
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 
 import scala.annotation.tailrec
@@ -40,18 +41,22 @@ package object network {
       }
 
     def setUpdatable(bool: Boolean) = {
-      layerSeq.foreach(_.setUpdatable(bool))
+      layerSeq.par.foreach(_.setUpdatable(bool))
       this
     }
 
     def loss = layerSeq.par.map(_.loss).sum
 
-    def update(count: Int): Unit = layerSeq.par.map { x ⇒ x.update(count); 0 }
+    def update(count: Int): Unit = layerSeq.par.foreach(_.update(count))
 
     def initiateBy(builder: WeightBuilder) = {
       this.builder = builder
       this
     }
+
+    def broadcast(sc: SparkContext): Unit = {}
+
+    def unbroadcast(): Unit = {}
 
     final def add(layer: TransformLayer) = {
       require(builder != null, "Set weight builder before add layer!")

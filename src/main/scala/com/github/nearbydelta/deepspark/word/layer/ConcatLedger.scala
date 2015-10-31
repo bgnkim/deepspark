@@ -6,6 +6,8 @@ import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.word.LedgerModel
 
+import scala.collection.parallel.ParSeq
+
 /**
  * __Layer__: Basic, Fully-connected Layer
  *
@@ -38,12 +40,16 @@ class ConcatLedger(private var takeRight: Boolean = true)
 
   override def write(kryo: Kryo, output: Output): Unit = {
     output.writeBoolean(takeRight)
+    output.writeInt(words)
     super.write(kryo, output)
   }
 
   override def read(kryo: Kryo, input: Input): Unit = {
     takeRight = input.readBoolean()
+    words = input.readInt()
     super.read(kryo, input)
+
+    dimension = model.dimension
   }
 
   override def apply(x: Array[Int]): DataVec = {
@@ -59,23 +65,26 @@ class ConcatLedger(private var takeRight: Boolean = true)
     DenseVector.vertcat(matrixList: _*)
   }
 
-  override def backward(in: Array[Int], out: DataVec, err: DataVec): DataVec = {
-    val padded =
-      if (takeRight) {
-        val wordseq = in.takeRight(words)
-        Seq.fill(words - wordseq.length)(padID) ++ wordseq.toSeq
-      } else {
-        val wordseq = in.take(words)
-        wordseq.toSeq ++ Seq.fill(words - wordseq.length)(padID)
-      }
+  override def backward(seq: ParSeq[((Array[Int], DataVec), DataVec)]): Seq[DataVec] = {
+    seq.foreach { case ((in, _), err) ⇒
+      val padded =
+        if (takeRight) {
+          val wordseq = in.takeRight(words)
+          Seq.fill(words - wordseq.length)(padID) ++ wordseq.toSeq
+        } else {
+          val wordseq = in.take(words)
+          wordseq.toSeq ++ Seq.fill(words - wordseq.length)(padID)
+        }
 
-    padded.foldLeft(0) {
-      case (index, str) ⇒
-        val endAt = index + dimension
-        val e = err(index until endAt)
-        updateWord(str, e)
-        endAt
+      padded.foldLeft(0) {
+        case (index, str) ⇒
+          val endAt = index + dimension
+          val e = err(index until endAt)
+          updateWord(str, e)
+          endAt
+      }
     }
+
     null
   }
 }

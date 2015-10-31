@@ -5,6 +5,7 @@ import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.network.Network
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 
 import scala.collection.mutable.ArrayBuffer
@@ -18,12 +19,9 @@ trait NetworkConcatLayer[X] extends InputLayer[Array[X], DataVec] {
   val networks: ArrayBuffer[Network[X, DataVec]] = ArrayBuffer()
   @transient val backprop: ArrayBuffer[(Network[X, DataVec], Int)] = ArrayBuffer()
 
-  def addNetwork(net: Network[X, DataVec]): this.type = {
-    networks += net
-    backprop += net → NOut
-    withOutput(NOut + net.NOut)
-    this
-  }
+  override def unbroadcast(): Unit = networks.par.foreach(_.unbroadcast())
+
+  override def broadcast(sc: SparkContext): Unit = networks.par.foreach(_.broadcast(sc))
 
   override def write(kryo: Kryo, output: Output): Unit = {
     output.writeInt(networks.size)
@@ -34,23 +32,30 @@ trait NetworkConcatLayer[X] extends InputLayer[Array[X], DataVec] {
   override def read(kryo: Kryo, input: Input): Unit = {
     val size = input.readInt()
     networks.clear()
+    backprop.clear()
+    NOut = 0
 
     (0 until size).foreach { _ ⇒
       val net = kryo.readClassAndObject(input).asInstanceOf[Network[X, DataVec]]
-      networks += net
-      NOut += net.NOut
-      backprop += net → NOut
+      addNetwork(net)
     }
 
     super.read(kryo, input)
   }
 
+  def addNetwork(net: Network[X, DataVec]): this.type = {
+    networks += net
+    backprop += net → NOut
+    NOut += net.NOut
+    this
+  }
+
   override def setUpdatable(bool: Boolean): Unit = {
-    networks.foreach(_.setUpdatable(bool))
+    networks.par.foreach(_.setUpdatable(bool))
     super.setUpdatable(bool)
   }
 
-  override def update(count: Int): Unit = networks.par.map { x ⇒ x.update(count); 0 }
+  override def update(count: Int): Unit = networks.par.foreach(_.update(count))
 
   override def apply(in: Array[X]): DataVec = {
     val vectors = in.zip(networks).map {
@@ -63,7 +68,7 @@ trait NetworkConcatLayer[X] extends InputLayer[Array[X], DataVec] {
 
   @deprecated(message = "NetworkConcatLayer cannot be used inside of RDD, because of its implementation.",
     since = "1.0.0")
-  override def backward(in: Array[X], out: DataVec, error: DataVec): DataVec =
+  override def backward(seq: ParSeq[((Array[X], DataVec), DataVec)]): Seq[DataVec] =
     throw new IllegalStateException("NetworkConcatLayer cannot be used inside of RDD, because of its implementation.")
 
   override def loss: Double = networks.map(_.loss).sum

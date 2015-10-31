@@ -6,6 +6,7 @@ import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.data._
 
 import scala.collection.mutable.ArrayBuffer
+import scala.collection.parallel.ParSeq
 
 /**
  * __Layer__: Basic, Fully-connected Rank 3 Tensor Layer.
@@ -147,15 +148,15 @@ abstract class Rank3TensorLayer extends TransformLayer {
    *       For the computation rules, see "Matrix Cookbook" from MIT.
    *       </p>
    *
-   * @param error to be propagated ( <code>dG / dF</code> is propagated from higher layer )
    * @return propagated error (in this case, <code>dG/dx</code> )
    */
-  def backward(in: DataVec, out: DataVec, error: DataVec): DataVec = {
-    val inA = in1(in)
-    val inB = in2(in)
-    val dFdX = act.diffAtY(out)
+  def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
+    val (internal, external) = seq.map { case ((in, out), error) ⇒
+      val inA = in1(in)
+      val inB = in2(in)
+      val dFdX = act.diffAtY(out)
 
-    /*
+      /*
      * Chain Rule : dG/dX_ij = tr[ ( dG/dF ).t * dF/dX_ij ].
      *
      * Note 1. X, dG/dF, dF/dX_ij are row vectors. Therefore tr(.) can be omitted.
@@ -163,12 +164,12 @@ abstract class Rank3TensorLayer extends TransformLayer {
      * Thus, dG/dX = [ (dG/dF).t * dF/dX ].t, because [...] is 1 × fanOut matrix.
      * Therefore dG/dX = dF/dX * dG/dF, because dF/dX is symmetric in our case.
      */
-    val dGdX: DataVec = dFdX * error
+      val dGdX: DataVec = dFdX * error
 
-    // For bias, input is always 1. We only need dG/dX
-    bias updateBy dGdX
+      // For bias, input is always 1. We only need dG/dX
+      bias updateBy dGdX
 
-    /*
+      /*
      * Chain Rule (Linear weight case) : dG/dW_ij = tr[ ( dG/dX ).t * dX/dW_ij ].
      *
      * dX/dW_ij is a fan-Out dimension column vector with all zero but (i, 1) = X_j.
@@ -177,9 +178,9 @@ abstract class Rank3TensorLayer extends TransformLayer {
      *
      * Therefore dG/dW = dG/dX * X.t
      */
-    val dGdL = dGdX * in.t
-    linear updateBy dGdL
-    /*
+      val dGdL = dGdX * in.t
+      linear updateBy dGdL
+      /*
      * Chain Rule (Linear weight part) : dG/dx_ij = tr[ ( dG/dX ).t * dX/dx_ij ].
      *
      * X is column vector. Thus j is always 1, so dX/dx_i is a W_?i.
@@ -187,53 +188,62 @@ abstract class Rank3TensorLayer extends TransformLayer {
      *
      * Thus dG/dx (linear part) = W.t * dG/dX.
      */
-    val dGdx = linear.value.t * dGdX
+      val dGdx = linear.value.t * dGdX
 
-    /*
+      /*
      * Because X = inA.t * Q * inB, dX/dQ = inA * inB.t
      */
-    val dXdQ: Matrix = inA * inB.t //d tr(axb)/dx = a'b'
+      val dXdQ: Matrix = inA * inB.t //d tr(axb)/dx = a'b'
 
-    // Add dG/dx quadratic part.
-    updateQuadratic(inA, inB, dGdX, dXdQ, dGdx)
-  }
+      // Add dG/dx quadratic part.
+      val dGdQ = (0 until NOut).map { id ⇒
+        // This is scalar
+        val dGdXi = dGdX(id)
 
-  private def updateQuadratic(inA: DataVec, inB: DataVec,
-                              dGdXAll: DataVec, dXdQ: Matrix,
-                              acc: DataVec, id: Int = NOut - 1): DataVec =
-    if (id >= 0) {
-      // This is scalar
-      val dGdX = dGdXAll(id)
+        /*
+         * Chain Rule (Quadratic weight case) : dG/dQ_ij = tr[ ( dG/dX ).t * dX/dQ_ij ].
+         *
+         * dX/dQ_ij = (inA * inB.t)_ij, and so dG/dQ_ij = (dG/dX).t * dX/dQ_ij.
+         * They are scalar, so dG/dQ = dG/dX * dX/dQ.
+         */
+        val dGdQ: Matrix = dXdQ :* dGdXi
 
-      /*
-       * Chain Rule (Quadratic weight case) : dG/dQ_ij = tr[ ( dG/dX ).t * dX/dQ_ij ].
-       *
-       * dX/dQ_ij = (inA * inB.t)_ij, and so dG/dQ_ij = (dG/dX).t * dX/dQ_ij.
-       * They are scalar, so dG/dQ = dG/dX * dX/dQ.
-       */
-      val dGdQ: Matrix = dXdQ :* dGdX
-      quadratic(id) updateBy dGdQ
-
-      /*
-       * Chain Rule (Linear weight part) : dG/dx_ij = tr[ ( dG/dX ).t * dX/dx_ij ].
-       *
-       * X is column vector. Thus j is always 1, so dX/dx_i is a W_?i.
-       * Hence dG/dx_i = tr[ (dG/dX).t * dX/dx_ij ] = (W_?i).t * dG/dX.
-       *
-       * Thus dG/dx = W.t * dG/dX.
-       *
-       * Chain Rule (Quadratic weight part) : dG/dx_ij = tr[ ( dG/dX ).t * dX/dx_ij ].
-       *
-       * Note that x is a column vector with inA, inB as parts.
-       * Because X = inA.t * Q * inB, dX/dxA = inB.t * Q.t and dX/dxB = inA.t * Q
-       * Since dG/dX is scalar, we obtain dG/dx by scalar multiplication.
-       */
-      val dXdxQ1: DataVec = quadratic(id).value * inB //d tr(ax')/dx = d tr(x'a)/dx = a'
+        /*
+         * Chain Rule (Linear weight part) : dG/dx_ij = tr[ ( dG/dX ).t * dX/dx_ij ].
+         *
+         * X is column vector. Thus j is always 1, so dX/dx_i is a W_?i.
+         * Hence dG/dx_i = tr[ (dG/dX).t * dX/dx_ij ] = (W_?i).t * dG/dX.
+         *
+         * Thus dG/dx = W.t * dG/dX.
+         *
+         * Chain Rule (Quadratic weight part) : dG/dx_ij = tr[ ( dG/dX ).t * dX/dx_ij ].
+         *
+         * Note that x is a column vector with inA, inB as parts.
+         * Because X = inA.t * Q * inB, dX/dxA = inB.t * Q.t and dX/dxB = inA.t * Q
+         * Since dG/dX is scalar, we obtain dG/dx by scalar multiplication.
+         */
+        val dXdxQ1: DataVec = quadratic(id).value * inB //d tr(ax')/dx = d tr(x'a)/dx = a'
       val dXdxQ2: DataVec = quadratic(id).value.t * inA //d tr(ax)/dx = d tr(xa)/dx = a
-      val dGdx: DataVec = restoreError(dXdxQ1, dXdxQ2) :* dGdX
-      acc += dGdx
+        dGdx += restoreError(dXdxQ1, dXdxQ2) :* dGdXi
 
-      updateQuadratic(inA, inB, dGdXAll, dXdQ, acc, id - 1)
-    } else
-      acc
+        dGdQ
+      }
+
+      ((dGdX, dGdL, dGdQ), dGdx)
+    }.unzip
+
+    val (dX, dL, dQ) = internal.unzip3
+    val dGdQ = dQ.reduce[IndexedSeq[Matrix]] {
+      case (q1, q2) ⇒
+        q1.zip(q2).map(x ⇒ x._1 += x._2)
+    }
+
+    bias updateBy dX.reduce(_ += _)
+    linear updateBy dL.reduce(_ += _)
+    (0 until NOut).par.foreach { id ⇒
+      quadratic(id) updateBy dGdQ(id)
+    }
+
+    external.seq
+  }
 }

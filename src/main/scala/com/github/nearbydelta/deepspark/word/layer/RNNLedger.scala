@@ -8,6 +8,7 @@ import com.github.nearbydelta.deepspark.layer.TransformLayer
 import com.github.nearbydelta.deepspark.word.LedgerModel
 
 import scala.annotation.tailrec
+import scala.collection.parallel.ParSeq
 
 /**
  * __Layer__: Basic, Fully-connected Layer
@@ -71,7 +72,7 @@ class RNNLedger(var layer: TransformLayer)
       val i2 = vectorOf(curr)
 
       // Scaling Down Trick for layer (Pascanu et al., 2013)
-      val compoundErr = layer.backward(DenseVector.vertcat(i1, i2), o, error)
+      val compoundErr = layer.backward(ParSeq((DenseVector.vertcat(i1, i2), o) → error)).head
       val errorRight = compoundErr(NOut to -1)
       val errorLeft = compoundErr(0 until NOut)
 
@@ -80,11 +81,14 @@ class RNNLedger(var layer: TransformLayer)
       update(errorLeft, words.tail, in.tail)
     }
 
-  override def backward(in: Array[Int], out: Array[DataVec], err: DataVec): DataVec = {
-    if (in.nonEmpty)
-      update(err, in.reverse, out)
-    else
-      updateWord(padID, err)
+  override def backward(seq: ParSeq[((Array[Int], Array[DataVec]), DataVec)]): Seq[DataVec] = {
+    seq.foreach { case ((in, out), err) ⇒
+      if (in.nonEmpty)
+        update(err, in.reverse, out)
+      else
+        updateWord(padID, err)
+    }
+
     null
   }
 }

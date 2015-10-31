@@ -26,7 +26,7 @@ package object layer {
 
     final def forward(in: In): DataVec = outVecOf(apply(in))
 
-    def backward(in: In, out: OutInfo, error: DataVec): DataVec
+    def backward(seq: ParSeq[((In, OutInfo), DataVec)]): Seq[DataVec]
 
     def withInput(in: Int): this.type = {
       NIn = in
@@ -63,11 +63,7 @@ package object layer {
       output
     }
 
-    def backward(error: Seq[DataVec]): Seq[DataVec] = {
-      inoutSEQ.zip(error).map {
-        case ((x, y), e) ⇒ backward(x, y, e)
-      }
-    }
+    def backward(error: Seq[DataVec]): Seq[DataVec] = backward(inoutSEQ.zip(error).par)
 
     def loss: Double
 
@@ -91,6 +87,10 @@ package object layer {
     def initiateBy(builder: WeightBuilder): this.type
   }
 
-  trait InputLayer[In, OutInfo] extends Layer[In, OutInfo]
+  trait InputLayer[In, OutInfo] extends Layer[In, OutInfo] {
+    def broadcast(sc: SparkContext): Unit
+
+    def unbroadcast(): Unit
+  }
 
 }

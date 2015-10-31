@@ -4,6 +4,8 @@ import breeze.linalg.DenseVector
 import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.word.LedgerModel
 
+import scala.collection.parallel.ParSeq
+
 /**
  * __Layer__: Basic, Fully-connected Layer
  *
@@ -27,15 +29,17 @@ class AverageLedger extends Ledger[DataVec] {
       pad
   }
 
-  override def backward(in: Array[Int], out: DataVec, err: DataVec): DataVec = {
-    if (in.nonEmpty) {
-      err :/= in.length.toDouble
+  override def backward(seq: ParSeq[((Array[Int], DataVec), DataVec)]): Seq[DataVec] = {
+    seq.foreach { case ((in, _), err) ⇒
+      if (in.nonEmpty) {
+        err :/= in.length.toDouble
 
-      in.foreach { str ⇒
-        updateWord(str, err)
-      }
-    } else
-      updateWord(padID, err)
+        in.foreach { str ⇒
+          updateWord(str, err)
+        }
+      } else
+        updateWord(padID, err)
+    }
 
     null
   }

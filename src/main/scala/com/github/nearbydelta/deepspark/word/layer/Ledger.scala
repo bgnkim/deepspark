@@ -6,6 +6,8 @@ import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.layer.InputLayer
 import com.github.nearbydelta.deepspark.word.{LedgerAlgorithm, LedgerBuilder, LedgerModel}
 import com.github.nearbydelta.deepspark.wordvec.{LedgerNote, LedgerNoteZero}
+import org.apache.spark.SparkContext
+import org.apache.spark.broadcast.Broadcast
 
 import scala.reflect.{ClassTag, classTag}
 
@@ -16,19 +18,11 @@ import scala.reflect.{ClassTag, classTag}
 trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
   protected lazy val padID = model.padID
   @transient implicit override protected val evidenceI: ClassTag[Array[Int]] = classTag[Array[Int]]
-  var model: LedgerModel = _
+  @transient var model: LedgerModel = _
+  var bcModel: Broadcast[LedgerModel] = _
   var delta: LedgerNote = _
   @transient var algorithm: LedgerAlgorithm = _
   @transient var builder: LedgerBuilder = _
-
-  def initiateBy(builder: LedgerBuilder): this.type = {
-    require(model != null, "Set model before initiate by builder!")
-    this.builder = builder
-    delta = LedgerNoteZero()
-    algorithm = builder.getUpdater(model.vectors, delta)
-
-    this
-  }
 
   def withModel(model: LedgerModel): this.type = {
     this.model = model
@@ -63,16 +57,39 @@ trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
     super.read(kryo, input)
   }
 
-  protected def updateWord(word: Int, vec: DataVec) = {
+  def initiateBy(builder: LedgerBuilder): this.type = {
+    require(model != null, "Set model before initiate by builder!")
+    this.builder = builder
+    delta = LedgerNoteZero()
+    algorithm = builder.getUpdater(model.vectors, delta)
+
+    this
+  }
+
+  override def broadcast(sc: SparkContext): Unit = {
+    bcModel = sc.broadcast(model)
+  }
+
+  override def unbroadcast(): Unit = {
+    bcModel.unpersist(blocking = false)
+  }
+
+  protected def updateWord(word: Int, vec: DataVec): Unit = {
     val dx = Weight.scaleCheck(vec)
-    delta.get(word) match {
-      case Some(x) ⇒ x += dx
-      case None ⇒
-        delta(word) = dx
+    delta.synchronized {
+      delta.get(word) match {
+        case Some(x) ⇒ x += dx
+        case None ⇒
+          delta(word) = dx
+      }
     }
   }
 
-  protected def pad = vectorOf(padID)
+  protected def pad =
+    if (bcModel != null) vectorOf(bcModel.value.padID)
+    else vectorOf(padID)
 
-  protected def vectorOf(str: Int) = model.vectorAt(str)
+  protected def vectorOf(str: Int) =
+    if (bcModel != null) bcModel.value.vectorAt(str)
+    else model.vectorAt(str)
 }
