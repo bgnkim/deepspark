@@ -15,8 +15,8 @@ import scala.collection.parallel.ParSeq
 class ConcatLedger(private var takeRight: Boolean = true)
   extends Ledger[DataVec] {
   override val outVecOf: (DataVec) ⇒ DataVec = x ⇒ x
-  private var words: Int = 0
   private var dimension: Int = 0
+  private var words: Int = 0
 
   def this() = this(true)
 
@@ -27,29 +27,6 @@ class ConcatLedger(private var takeRight: Boolean = true)
       NOut = words * dimension
     }
     this
-  }
-
-  override def withModel(model: LedgerModel): this.type = {
-    dimension = model.dimension
-    if (words > 0) {
-      NOut = words * dimension
-    }
-
-    super.withModel(model)
-  }
-
-  override def write(kryo: Kryo, output: Output): Unit = {
-    output.writeBoolean(takeRight)
-    output.writeInt(words)
-    super.write(kryo, output)
-  }
-
-  override def read(kryo: Kryo, input: Input): Unit = {
-    takeRight = input.readBoolean()
-    words = input.readInt()
-    super.read(kryo, input)
-
-    dimension = model.dimension
   }
 
   override def apply(x: Array[Int]): DataVec = {
@@ -76,15 +53,38 @@ class ConcatLedger(private var takeRight: Boolean = true)
           wordseq.toSeq ++ Seq.fill(words - wordseq.length)(padID)
         }
 
-      padded.foldLeft(0) {
-        case (index, str) ⇒
-          val endAt = index + dimension
-          val e = err(index until endAt)
+      padded.zipWithIndex.par.foreach {
+        case (str, index) ⇒
+          val startAt = index * dimension
+          val endAt = startAt + dimension
+          val e = err(startAt until endAt)
           updateWord(str, e)
-          endAt
       }
     }
 
     null
+  }
+
+  override def read(kryo: Kryo, input: Input): Unit = {
+    takeRight = input.readBoolean()
+    words = input.readInt()
+    super.read(kryo, input)
+
+    dimension = model.dimension
+  }
+
+  override def withModel(model: LedgerModel): this.type = {
+    dimension = model.dimension
+    if (words > 0) {
+      NOut = words * dimension
+    }
+
+    super.withModel(model)
+  }
+
+  override def write(kryo: Kryo, output: Output): Unit = {
+    output.writeBoolean(takeRight)
+    output.writeInt(words)
+    super.write(kryo, output)
   }
 }

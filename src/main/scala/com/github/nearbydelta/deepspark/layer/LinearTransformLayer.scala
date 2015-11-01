@@ -7,78 +7,31 @@ import com.github.nearbydelta.deepspark.data._
 import scala.collection.parallel.ParSeq
 
 /**
- * __Layer__: Basic, Fully-connected Layer
+ * __Layer__: Basic, Fully-connected Layer without bias.
  *
  */
 class LinearTransformLayer extends TransformLayer {
-  /* Initialize weight */
+  /** Weight */
   val weight: Weight[Matrix] = new Weight[Matrix]
+  /** Activation */
   var act: Activation = HyperbolicTangent
 
+  /**
+   * Set the activation function.
+   * @param act Activation function.
+   * @return self
+   */
   def withActivation(act: Activation): this.type = {
     this.act = act
     this
   }
 
-  override def initiateBy(builder: WeightBuilder): this.type = {
-    if (NIn > 0 && NOut > 0) {
-      val range = act.initialize(NIn, NOut)
-      builder.buildMatrix(weight, NOut, NIn, range)
-    }
-
-    this
-  }
-
-  override def loss: Double = weight.loss
-
-  override def write(kryo: Kryo, output: Output): Unit = {
-    kryo.writeClassAndObject(output, act)
-    weight.write(kryo, output)
-    super.write(kryo, output)
-  }
-
-  override def read(kryo: Kryo, input: Input): Unit = {
-    act = kryo.readClassAndObject(input).asInstanceOf[Activation]
-    weight.read(kryo, input)
-    super.read(kryo, input)
-  }
-
-  override def update(count: Int): Unit = {
-    weight.update(count)
-  }
-
-  /**
-   * Forward computation
-   *
-   * @param x input matrix
-   * @return output matrix
-   */
   override def apply(x: DataVec): DataVec = {
     val wx: DataVec = weight.value * x
     act(wx)
   }
 
-  /**
-   * <p>Backward computation.</p>
-   *
-   * @note <p>
-   *       Let this layer have function F composed with function <code> X(x) = W.x + b </code>
-   *       and higher layer have function G.
-   *       </p>
-   *
-   *       <p>
-   *       Weight is updated with: <code>dG/dW</code>
-   *       and propagate <code>dG/dx</code>
-   *       </p>
-   *
-   *       <p>
-   *       For the computation, we only used denominator layout. (cf. Wikipedia Page of Matrix Computation)
-   *       For the computation rules, see "Matrix Cookbook" from MIT.
-   *       </p>
-   *
-   * @return propagated error (in this case, <code>dG/dx</code> )
-   */
-  def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
+  override def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
     val (dW, external) = seq.map { case ((in, out), error) ⇒
       val dFdX = act.diffAtY(out)
       /*
@@ -118,5 +71,32 @@ class LinearTransformLayer extends TransformLayer {
     weight updateBy dW.reduce(_ += _)
 
     external.seq
+  }
+
+  override def initiateBy(builder: WeightBuilder): this.type = {
+    if (NIn > 0 && NOut > 0) {
+      val range = act.initialize(NIn, NOut)
+      builder.buildMatrix(weight, NOut, NIn, range)
+    }
+
+    this
+  }
+
+  override def loss: Double = weight.loss
+
+  override def read(kryo: Kryo, input: Input): Unit = {
+    act = kryo.readClassAndObject(input).asInstanceOf[Activation]
+    weight.read(kryo, input)
+    super.read(kryo, input)
+  }
+
+  override def update(count: Int): Unit = {
+    weight.update(count)
+  }
+
+  override def write(kryo: Kryo, output: Output): Unit = {
+    kryo.writeClassAndObject(output, act)
+    weight.write(kryo, output)
+    super.write(kryo, output)
   }
 }

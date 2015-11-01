@@ -11,14 +11,23 @@ import scala.io.Codec
 import scala.reflect.io.{File, Path}
 
 /**
- * Created by bydelta on 15. 10. 4.
+ * Class for word list, or ledger words.
  */
 class LedgerWords extends Serializable with KryoSerializable {
-  lazy final val unkID = words(LedgerModel.UnkAll)
+  /** ID for pad */
   lazy final val padID = words(LedgerModel.PAD)
+  /** Size of this layer */
   lazy final val size = words.size
+  /** ID for Unknown */
+  lazy final val unkID = words(LedgerModel.UnkAll)
+  /** Mapping of words */
   val words = mutable.HashMap[String, Int]()
 
+  /**
+   * Get index of given word
+   * @param str Word
+   * @return Index
+   */
   def indexOf(str: String): Int = {
     words.get(str) match {
       case Some(id) ⇒ id
@@ -27,6 +36,16 @@ class LedgerWords extends Serializable with KryoSerializable {
           case Some(id) ⇒ id
           case None ⇒ unkID
         }
+    }
+  }
+
+  override def read(kryo: Kryo, input: Input): Unit = {
+    words.clear()
+    val size = input.readInt()
+    (0 until size).foreach { _ ⇒
+      val str = input.readString()
+      val id = input.readInt()
+      words += (str → id)
     }
   }
 
@@ -39,50 +58,54 @@ class LedgerWords extends Serializable with KryoSerializable {
         output.writeInt(id)
     }
   }
-  
-  override def read(kryo: Kryo, input: Input): Unit = {
-    words.clear()
-    val size = input.readInt()
-    (0 until size).foreach { _ ⇒
-      val str = input.readString()
-      val id = input.readInt()
-      words += (str → id)
-    }
-  }
 }
 
+/**
+ * Class for word vectors, or ledger.
+ */
 class LedgerModel extends Serializable with KryoSerializable {
+  /** Dimension of vector */
+  lazy final val dimension = vectors.head.size
+  /** ID of pad */
+  lazy final val padID = wordmap.padID
+  /** size of model */
+  lazy final val size = wordmap.size
+  /** ID of Unknown */
+  lazy final val unkID = wordmap.unkID
+  /** list of vector */
   val vectors = mutable.ArrayBuffer[DataVec]()
+  /** map of words, ledger words. */
   var wordmap = new LedgerWords()
 
-  lazy final val dimension = vectors.head.size
-  lazy final val unkID = wordmap.unkID
-  lazy final val padID = wordmap.padID
-  lazy final val size = wordmap.size
-
-  def indexOf(str: String) = wordmap.indexOf(str: String)
-
-  def saveTo(file: Path) =
-    try {
-      val oos = new Output(File(file).outputStream())
-      this.write(KryoWrap.kryo, oos)
-      oos.close()
-    } catch {
-      case _: Throwable ⇒
-    }
-
-  // Please change word layer if change this.
-  override def write(kryo: Kryo, output: Output): Unit = {
-    kryo.writeClassAndObject(output, wordmap)
-    output.writeInt(vectors.size)
-    vectors.foreach {
-      case vec ⇒
-        kryo.writeClassAndObject(output, vec)
-    }
+  /**
+   * Find vector of given string.
+   * @param str word
+   * @return Word vector
+   */
+  def apply(str: String): DataVec = {
+    vectorAt(indexOf(str))
   }
 
-  def vectorAt(at: Int) = vectors(at)
+  /**
+   * Copy this ledger model
+   * @return new ledger model.
+   */
+  def copy: LedgerModel = {
+    val model = new LedgerModel().set(this.wordmap, this.vectors)
+    model
+  }
 
+  /**
+   * Find index of given word
+   * @param str word
+   * @return index
+   */
+  def indexOf(str: String) = wordmap.indexOf(str: String)
+
+  /**
+   * Save ledger model into text file
+   * @param file Save path
+   */
   def saveAsTextFile(file: Path) =
     try {
       val bos = File(file).bufferedWriter()
@@ -96,16 +119,37 @@ class LedgerModel extends Serializable with KryoSerializable {
       case _: Throwable ⇒
     }
 
-  def copy: LedgerModel = {
-    val model = new LedgerModel().set(this.wordmap, this.vectors)
-    model
-  }
+  /**
+   * Save ledger model into kryo file
+   * @param file Save path
+   */
+  def saveTo(file: Path) =
+    try {
+      val oos = new Output(File(file).outputStream())
+      this.write(KryoWrap.kryo, oos)
+      oos.close()
+    } catch {
+      case _: Throwable ⇒
+    }
 
+  /**
+   * Set words and vectors
+   * @param map word mapping, ledger words
+   * @param vec sequence of vectors
+   * @return self
+   */
   def set(map: LedgerWords, vec: mutable.ArrayBuffer[DataVec]): this.type = {
     this.wordmap = map
     vectors ++= vec
     this
   }
+
+  /**
+   * Get vectors at index
+   * @param at index
+   * @return vector
+   */
+  def vectorAt(at: Int) = vectors(at)
 
   override def read(kryo: Kryo, input: Input): Unit = {
     wordmap = kryo.readClassAndObject(input).asInstanceOf[LedgerWords]
@@ -117,19 +161,40 @@ class LedgerModel extends Serializable with KryoSerializable {
     }
   }
 
-  def apply(str: String): DataVec = {
-    vectorAt(indexOf(str))
+  // Please change word layer if change this.
+  override def write(kryo: Kryo, output: Output): Unit = {
+    kryo.writeClassAndObject(output, wordmap)
+    output.writeInt(vectors.size)
+    vectors.foreach {
+      case vec ⇒
+        kryo.writeClassAndObject(output, vec)
+    }
   }
 }
 
+/**
+ * Companion class of ledger model.
+ */
 object LedgerModel {
-  final val UnkAll = "#SHAPE_*"
+  /** String for pad */
   final val PAD: String = "#PAD_X"
-
+  /** String for unknown */
+  final val UnkAll = "#SHAPE_*"
+  /** Logger */
   val logger = Logger.getLogger(this.getClass)
 
+  /**
+   * Read model from path. File can be white-space splited text list.
+   * @param path Path of file
+   * @return LedgerModel
+   */
   def read(path: Path): LedgerModel = read(File(path))
 
+  /**
+   * Read model from path. File can be white-space splited text list.
+   * @param file File
+   * @return LedgerModel
+   */
   def read(file: File): LedgerModel = {
     val path = file.path + ".obj"
     if (File(path).exists) {
@@ -138,7 +203,7 @@ object LedgerModel {
       model.read(KryoWrap.kryo, in)
       in.close()
 
-      logger info s"READ GloVe finished (Dimension ${model.dimension}, Size ${model.size})"
+      logger info s"READ Embedding Vectors finished (Dimension ${model.dimension}, Size ${model.size})"
       model
     } else {
       val br = file.lines(Codec.UTF8)
@@ -201,7 +266,7 @@ object LedgerModel {
       logger info s"Start to save GloVe (Dimension ${model.dimension}, Size ${model.size})"
       model.saveTo(path)
 
-      logger info s"READ GloVe finished (Dimension ${model.dimension}, Size ${model.size})"
+      logger info s"READ Embedding Vectors finished (Dimension ${model.dimension}, Size ${model.size})"
       model
     }
   }

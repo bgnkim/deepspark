@@ -10,44 +10,80 @@ import scala.collection.parallel.ParSeq
 import scala.reflect.{ClassTag, classTag}
 
 /**
- * Created by bydelta on 15. 10. 16.
+ * Package deepspark.layer
+ *
+ * Package of layer classes.
  */
 package object layer {
 
+  /**
+   * __Trait__ of layer.
+   * @tparam In Input type
+   * @tparam OutInfo Output type to store.
+   */
   trait Layer[In, OutInfo] extends Serializable with KryoSerializable {
-    @transient implicit protected val evidenceI: ClassTag[In]
-    var NIn: Int = 0
-    var NOut: Int = 0
+    /** Output converter from OutInfo to Vector **/
     val outVecOf: OutInfo ⇒ DataVec
-    @transient protected var isUpdatable: Boolean = false
+    /** ClassTag for input **/
+    @transient implicit protected val evidenceI: ClassTag[In]
+    /** Size of input **/
+    var NIn: Int = 0
+    /** Size of output **/
+    var NOut: Int = 0
+    /** Sequence for backpropagation. Stores output values. **/
     @transient protected var inoutSEQ: Seq[(In, OutInfo)] = null
+    /** True if this layer affected by backward propagation **/
+    @transient protected var isUpdatable: Boolean = false
 
+    /**
+     * Apply this layer (forward computation)
+     * @param in Input value
+     * @return Output computation information.
+     */
     def apply(in: In): OutInfo
 
-    final def forward(in: In): DataVec = outVecOf(apply(in))
-
-    def backward(seq: ParSeq[((In, OutInfo), DataVec)]): Seq[DataVec]
-
-    def withInput(in: Int): this.type = {
-      NIn = in
-      this
-    }
-
-    def withOutput(out: Int): this.type = {
-      NOut = out
-      this
-    }
-
-    def setUpdatable(bool: Boolean): Unit = {
-      this.isUpdatable = bool
-    }
-
+    /**
+     * Apply RDD of vector.
+     * @param in RDD of (ID, Value), ID is Long value.
+     * @return RDD of (ID, Vector), with same ID for input.
+     */
     def apply(in: RDD[(Long, In)]): RDD[(Long, DataVec)] = {
       in.mapValues(x ⇒ outVecOf(apply(x)))
     }
 
+    /**
+     * Backward computation
+     * @param seq Sequence of entries to be used for backward computation.
+     * @return Error sequence, to backpropagate into previous layer.
+     */
+    def backward(seq: ParSeq[((In, OutInfo), DataVec)]): Seq[DataVec]
+
+    /**
+     * Backward computation using propagated error.
+     * @param error Propagated error sequence.
+     * @return Error sequence for back propagation.
+     */
+    def backward(error: Seq[DataVec]): Seq[DataVec] = backward(inoutSEQ.zip(error).par)
+
+    /**
+     * Apply this layer (forward computation)
+     * @param in Input value
+     * @return Output Vector
+     */
+    final def forward(in: In): DataVec = outVecOf(apply(in))
+
+    /**
+     * Apply RDD of vector.
+     * @param in RDD of (ID, Value), ID is Long value.
+     * @return RDD of (ID, Vector), with same ID for input.
+     */
     final def forward(in: RDD[(Long, In)]) = apply(in)
 
+    /**
+     * Apply Parallel Sequence of vector.
+     * @param in Parallel Sequence of Input
+     * @return Parallel Sequence of Vector
+     */
     def forward(in: ParSeq[In]): ParSeq[DataVec] = {
       val seq = in.map(x ⇒ (x, apply(x)))
       val output = seq.map { x ⇒
@@ -63,33 +99,87 @@ package object layer {
       output
     }
 
-    def backward(error: Seq[DataVec]): Seq[DataVec] = backward(inoutSEQ.zip(error).par)
-
+    /**
+     * Weight Loss of this layer
+     * @return Weight loss
+     */
     def loss: Double
 
+    /**
+     * Assign whether this layer updatable or not. value.
+     * @param bool True if this layer used in backpropagation.
+     */
+    def setUpdatable(bool: Boolean): Unit = {
+      this.isUpdatable = bool
+    }
+
+    /**
+     * Execute update procedure of this layer.
+     * @param count Size of minibatch
+     */
     def update(count: Int): Unit
 
-    override def write(kryo: Kryo, output: Output): Unit = {
-      output.writeInt(NIn)
-      output.writeInt(NOut)
+    /**
+     * Set input size
+     * @param in Size of input
+     * @return self
+     */
+    def withInput(in: Int): this.type = {
+      NIn = in
+      this
+    }
+
+    /**
+     * Set output size
+     * @param out Size of output
+     * @return self
+     */
+    def withOutput(out: Int): this.type = {
+      NOut = out
+      this
     }
 
     override def read(kryo: Kryo, input: Input): Unit = {
       NIn = input.readInt
       NOut = input.readInt
     }
+
+    override def write(kryo: Kryo, output: Output): Unit = {
+      output.writeInt(NIn)
+      output.writeInt(NOut)
+    }
   }
 
+  /**
+   * __Trait__ for hidden/output layer.
+   */
   trait TransformLayer extends Layer[DataVec, DataVec] {
-    @transient implicit override protected val evidenceI: ClassTag[DataVec] = classTag[DataVec]
     override final val outVecOf = (x: DataVec) ⇒ x
+    @transient implicit override protected val evidenceI: ClassTag[DataVec] = classTag[DataVec]
 
+    /**
+     * Set weight builder for this layer.
+     * @param builder Weight builder to be applied
+     * @return self
+     */
     def initiateBy(builder: WeightBuilder): this.type
   }
 
+  /**
+   * __Trait__ for input layer.
+   * @tparam In Input type
+   * @tparam OutInfo Output type to store.
+   */
   trait InputLayer[In, OutInfo] extends Layer[In, OutInfo] {
+    /**
+     * Broadcast resources of this layer.
+     * @param sc Spark Context
+     */
     def broadcast(sc: SparkContext): Unit
 
+    /**
+     * Unpersist broadcast of this layer.
+     */
     def unbroadcast(): Unit
   }
 

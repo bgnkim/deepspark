@@ -16,7 +16,12 @@ import com.github.nearbydelta.deepspark.data._
  *       </pre>
  */
 class SplitTensorLayer extends Rank3TensorLayer {
-
+  /**
+   * Set split range
+   * @param head Front range size
+   * @param tail Tail range size
+   * @return self.
+   */
   def withSplit(head: Int, tail: Int): this.type = {
     fanInA = head
     fanInB = tail
@@ -24,26 +29,9 @@ class SplitTensorLayer extends Rank3TensorLayer {
     this
   }
 
-  /**
-   * Retrieve first input
-   *
-   * @param x input to be separated
-   * @return first input
-   */
   protected override def in1(x: DataVec): DataVec = x(0 until fanInA)
 
-  /**
-   * Retrive second input
-   * @param x input to be separated
-   * @return second input
-   */
   protected override def in2(x: DataVec): DataVec = x(fanInA to -1)
 
-  /**
-   * Reconstruct error from fragments
-   * @param in1 error of input1
-   * @param in2 error of input2
-   * @return restored error
-   */
-  override protected def restoreError(in1: DataVec, in2: DataVec): DataVec = DenseVector.vertcat(in1, in2)
+  protected override def restoreError(in1: DataVec, in2: DataVec): DataVec = DenseVector.vertcat(in1, in2)
 }

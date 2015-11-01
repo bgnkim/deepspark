@@ -12,50 +12,27 @@ import scala.collection.mutable.ArrayBuffer
 import scala.collection.parallel.ParSeq
 
 /**
- * Created by bydelta on 15. 10. 17.
+ * __Layer__ for network concatenation.
+ * @tparam X Input type of networks.
  */
 trait NetworkConcatLayer[X] extends InputLayer[Array[X], DataVec] {
   override val outVecOf: (DataVec) ⇒ DataVec = x ⇒ x
-  val networks: ArrayBuffer[Network[X, DataVec]] = ArrayBuffer()
+  /** Predefined sequence for Backpropagation **/
   @transient val backprop: ArrayBuffer[(Network[X, DataVec], Int)] = ArrayBuffer()
+  /** Sequence of networks to be concatenated. **/
+  val networks: ArrayBuffer[Network[X, DataVec]] = ArrayBuffer()
 
-  override def unbroadcast(): Unit = networks.par.foreach(_.unbroadcast())
-
-  override def broadcast(sc: SparkContext): Unit = networks.par.foreach(_.broadcast(sc))
-
-  override def write(kryo: Kryo, output: Output): Unit = {
-    output.writeInt(networks.size)
-    networks.foreach(kryo.writeClassAndObject(output, _))
-    super.write(kryo, output)
-  }
-
-  override def read(kryo: Kryo, input: Input): Unit = {
-    val size = input.readInt()
-    networks.clear()
-    backprop.clear()
-    NOut = 0
-
-    (0 until size).foreach { _ ⇒
-      val net = kryo.readClassAndObject(input).asInstanceOf[Network[X, DataVec]]
-      addNetwork(net)
-    }
-
-    super.read(kryo, input)
-  }
-
+  /**
+   * Add new network
+   * @param net Network to be added
+   * @return self
+   */
   def addNetwork(net: Network[X, DataVec]): this.type = {
     networks += net
     backprop += net → NOut
     NOut += net.NOut
     this
   }
-
-  override def setUpdatable(bool: Boolean): Unit = {
-    networks.par.foreach(_.setUpdatable(bool))
-    super.setUpdatable(bool)
-  }
-
-  override def update(count: Int): Unit = networks.par.foreach(_.update(count))
 
   override def apply(in: Array[X]): DataVec = {
     val vectors = in.zip(networks).map {
@@ -65,13 +42,6 @@ trait NetworkConcatLayer[X] extends InputLayer[Array[X], DataVec] {
 
     DenseVector.vertcat(vectors: _*)
   }
-
-  @deprecated(message = "NetworkConcatLayer cannot be used inside of RDD, because of its implementation.",
-    since = "1.0.0")
-  override def backward(seq: ParSeq[((Array[X], DataVec), DataVec)]): Seq[DataVec] =
-    throw new IllegalStateException("NetworkConcatLayer cannot be used inside of RDD, because of its implementation.")
-
-  override def loss: Double = networks.map(_.loss).sum
 
   override def apply(in: RDD[(Long, Array[X])]): RDD[(Long, DataVec)] = {
     val rdds = (0 until networks.size).map({ id ⇒
@@ -85,6 +55,23 @@ trait NetworkConcatLayer[X] extends InputLayer[Array[X], DataVec] {
       DenseVector.vertcat(x.toSeq.sortBy(_._1).map(_._2): _*)
     }
   }
+
+  @deprecated(message = "NetworkConcatLayer cannot be used inside of RDD, because of its implementation.",
+    since = "1.0.0")
+  override def backward(seq: ParSeq[((Array[X], DataVec), DataVec)]): Seq[DataVec] =
+    throw new IllegalStateException("NetworkConcatLayer cannot be used inside of RDD, because of its implementation.")
+
+  override def backward(error: Seq[DataVec]): Seq[DataVec] = {
+    backprop.par.foreach {
+      case (net, from) ⇒
+        val to = from + net.NOut
+        net backward error.map(_.apply(from until to))
+    }
+
+    Seq.empty
+  }
+
+  override def broadcast(sc: SparkContext): Unit = networks.par.foreach(_.broadcast(sc))
 
   override def forward(in: ParSeq[Array[X]]): ParSeq[DataVec] = {
     (0 until networks.size).par.map { id ⇒
@@ -101,13 +88,34 @@ trait NetworkConcatLayer[X] extends InputLayer[Array[X], DataVec] {
     }
   }
 
-  override def backward(error: Seq[DataVec]): Seq[DataVec] = {
-    backprop.par.foreach {
-      case (net, from) ⇒
-        val to = from + net.NOut
-        net backward error.map(_.apply(from until to))
+  override def loss: Double = networks.map(_.loss).sum
+
+  override def read(kryo: Kryo, input: Input): Unit = {
+    val size = input.readInt()
+    networks.clear()
+    backprop.clear()
+    NOut = 0
+
+    (0 until size).foreach { _ ⇒
+      val net = kryo.readClassAndObject(input).asInstanceOf[Network[X, DataVec]]
+      addNetwork(net)
     }
 
-    Seq.empty
+    super.read(kryo, input)
+  }
+
+  override def setUpdatable(bool: Boolean): Unit = {
+    networks.par.foreach(_.setUpdatable(bool))
+    super.setUpdatable(bool)
+  }
+
+  override def unbroadcast(): Unit = networks.par.foreach(_.unbroadcast())
+
+  override def update(count: Int): Unit = networks.par.foreach(_.update(count))
+
+  override def write(kryo: Kryo, output: Output): Unit = {
+    output.writeInt(networks.size)
+    networks.foreach(kryo.writeClassAndObject(output, _))
+    super.write(kryo, output)
   }
 }

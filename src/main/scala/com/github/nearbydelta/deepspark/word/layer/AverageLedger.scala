@@ -13,11 +13,6 @@ import scala.collection.parallel.ParSeq
 class AverageLedger extends Ledger[DataVec] {
   override val outVecOf: (DataVec) ⇒ DataVec = x ⇒ x
 
-  override def withModel(model: LedgerModel): this.type = {
-    NOut = model.dimension
-    super.withModel(model)
-  }
-
   override def apply(x: Array[Int]): DataVec = {
     if (x.nonEmpty) {
       val matrix =
@@ -34,7 +29,7 @@ class AverageLedger extends Ledger[DataVec] {
       if (in.nonEmpty) {
         err :/= in.length.toDouble
 
-        in.foreach { str ⇒
+        in.par.foreach { str ⇒
           updateWord(str, err)
         }
       } else
@@ -42,5 +37,10 @@ class AverageLedger extends Ledger[DataVec] {
     }
 
     null
+  }
+
+  override def withModel(model: LedgerModel): this.type = {
+    NOut = model.dimension
+    super.withModel(model)
   }
 }

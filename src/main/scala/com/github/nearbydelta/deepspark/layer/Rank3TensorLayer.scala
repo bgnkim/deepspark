@@ -21,67 +21,23 @@ import scala.collection.parallel.ParSeq
  *       </pre>
  */
 abstract class Rank3TensorLayer extends TransformLayer {
+  val bias = new Weight[DataVec]
+  val linear = new Weight[Matrix]
+  /* Initialize weight */
+  val quadratic = ArrayBuffer[Weight[Matrix]]()
+  var act: Activation = HyperbolicTangent
   /* Number of Fan-ins */
   protected final var fanInA = 0
   protected final var fanInB = 0
-  /* Initialize weight */
-  val quadratic = ArrayBuffer[Weight[Matrix]]()
-  val linear = new Weight[Matrix]
-  val bias = new Weight[DataVec]
-  var act: Activation = HyperbolicTangent
 
+  /**
+   * Set the activation function.
+   * @param act Activation function.
+   * @return self
+   */
   def withActivation(act: Activation): this.type = {
     this.act = act
     this
-  }
-
-  override def initiateBy(builder: WeightBuilder): this.type = {
-    if (NIn > 0 && NOut > 0) {
-      val range = act.initialize(NIn, NOut)
-      if (quadratic.isEmpty)
-        (0 until NOut).foreach { _ ⇒
-          quadratic += new Weight[Matrix]
-        }
-      quadratic.foreach(weight ⇒ builder.buildMatrix(weight, fanInA, fanInB, range))
-      builder.buildMatrix(linear, NOut, NIn, range)
-      builder.buildVector(bias, NOut, range)
-    }
-
-    this
-  }
-
-  override def loss: Double = linear.loss + bias.loss + quadratic.map(_.loss).sum
-
-  override def write(kryo: Kryo, output: Output): Unit = {
-    output.writeInt(fanInA)
-    output.writeInt(fanInB)
-    kryo.writeClassAndObject(output, act)
-    bias.write(kryo, output)
-    linear.write(kryo, output)
-    output.writeInt(NOut)
-    quadratic.foreach(_.write(kryo, output))
-    super.write(kryo, output)
-  }
-
-  override def read(kryo: Kryo, input: Input): Unit = {
-    fanInA = input.readInt()
-    fanInB = input.readInt()
-    act = kryo.readClassAndObject(input).asInstanceOf[Activation]
-    bias.read(kryo, input)
-    linear.read(kryo, input)
-    val size = input.readInt()
-    (0 until size).map { _ ⇒
-      val weight = new Weight[Matrix]
-      weight.read(kryo, input)
-      quadratic += weight
-    }
-    super.read(kryo, input)
-  }
-
-  override def update(count: Int): Unit = {
-    bias.update(count)
-    linear.update(count)
-    quadratic.foreach(_.update(count))
   }
 
   /**
@@ -108,12 +64,6 @@ abstract class Rank3TensorLayer extends TransformLayer {
    */
   protected def restoreError(in1: DataVec, in2: DataVec): DataVec
 
-  /**
-   * Forward computation
-   *
-   * @param x input matrix
-   * @return output matrix
-   */
   override def apply(x: DataVec): DataVec = {
     val inA = in1(x)
     val inB = in2(x)
@@ -130,27 +80,7 @@ abstract class Rank3TensorLayer extends TransformLayer {
     act(intermediate)
   }
 
-  /**
-   * <p>Backward computation.</p>
-   *
-   * @note <p>
-   *       Let this layer have function F composed with function <code> X(x) = x1'.Q.x2 + L.x + b </code>
-   *       and higher layer have function G. (Each output is treated as separately except propagation)
-   *       </p>
-   *
-   *       <p>
-   *       Weight is updated with: <code>dG/dW</code>
-   *       and propagate <code>dG/dx</code>
-   *       </p>
-   *
-   *       <p>
-   *       For the computation, we only used denominator layout. (cf. Wikipedia Page of Matrix Computation)
-   *       For the computation rules, see "Matrix Cookbook" from MIT.
-   *       </p>
-   *
-   * @return propagated error (in this case, <code>dG/dx</code> )
-   */
-  def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
+  override def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
     val (internal, external) = seq.map { case ((in, out), error) ⇒
       val inA = in1(in)
       val inB = in2(in)
@@ -245,5 +175,54 @@ abstract class Rank3TensorLayer extends TransformLayer {
     }
 
     external.seq
+  }
+
+  override def initiateBy(builder: WeightBuilder): this.type = {
+    if (NIn > 0 && NOut > 0) {
+      val range = act.initialize(NIn, NOut)
+      if (quadratic.isEmpty)
+        (0 until NOut).foreach { _ ⇒
+          quadratic += new Weight[Matrix]
+        }
+      quadratic.foreach(weight ⇒ builder.buildMatrix(weight, fanInA, fanInB, range))
+      builder.buildMatrix(linear, NOut, NIn, range)
+      builder.buildVector(bias, NOut, range)
+    }
+
+    this
+  }
+
+  override def loss: Double = linear.loss + bias.loss + quadratic.map(_.loss).sum
+
+  override def read(kryo: Kryo, input: Input): Unit = {
+    fanInA = input.readInt()
+    fanInB = input.readInt()
+    act = kryo.readClassAndObject(input).asInstanceOf[Activation]
+    bias.read(kryo, input)
+    linear.read(kryo, input)
+    val size = input.readInt()
+    (0 until size).map { _ ⇒
+      val weight = new Weight[Matrix]
+      weight.read(kryo, input)
+      quadratic += weight
+    }
+    super.read(kryo, input)
+  }
+
+  override def update(count: Int): Unit = {
+    bias.update(count)
+    linear.update(count)
+    quadratic.foreach(_.update(count))
+  }
+
+  override def write(kryo: Kryo, output: Output): Unit = {
+    output.writeInt(fanInA)
+    output.writeInt(fanInB)
+    kryo.writeClassAndObject(output, act)
+    bias.write(kryo, output)
+    linear.write(kryo, output)
+    output.writeInt(NOut)
+    quadratic.foreach(_.write(kryo, output))
+    super.write(kryo, output)
   }
 }

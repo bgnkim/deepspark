@@ -21,27 +21,9 @@ class FullTensorLayer extends Rank3TensorLayer {
     super.withInput(in)
   }
 
-  /**
-   * Retrieve first input
-   *
-   * @param x input to be separated
-   * @return first input
-   */
   protected override def in1(x: DataVec): DataVec = x
 
-  /**
-   * Retrive second input
-   *
-   * @param x input to be separated
-   * @return second input
-   */
   protected override def in2(x: DataVec): DataVec = x
 
-  /**
-   * Reconstruct error from fragments
-   * @param in1 error of input1
-   * @param in2 error of input2
-   * @return restored error
-   */
-  override protected def restoreError(in1: DataVec, in2: DataVec): DataVec = in1 + in2
+  protected override def restoreError(in1: DataVec, in2: DataVec): DataVec = in1 + in2
 }

@@ -6,18 +6,19 @@ import org.apache.spark.rdd.RDD
 import scala.collection.parallel.ParSeq
 
 /**
- * Created by bydelta on 15. 10. 17.
+ * __Network__ without input layer. (Input with vector)
+ * @tparam Out Type of output.
  */
 class SimpleNetwork[Out]() extends Network[DataVec, Out] {
-  final def forward(in: RDD[(Long, DataVec)]): RDD[(Long, DataVec)] = forwardRDD(in)
+  override def backward(error: Seq[DataVec]): Unit = {
+    backwardSeq(error)
+  }
 
-  def forward(in: DataVec) = forwardSingle(in)
+  override def forward(in: DataVec) = forwardSingle(in)
 
-  final def forward(in: ParSeq[DataVec]): ParSeq[DataVec] = {
+  override def forward(in: ParSeq[DataVec]): ParSeq[DataVec] = {
     forwardSeq(in)
   }
 
-  final def backward(error: Seq[DataVec]): Unit = {
-    backwardSeq(error)
-  }
+  override def forward(in: RDD[(Long, DataVec)]): RDD[(Long, DataVec)] = forwardRDD(in)
 }

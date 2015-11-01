@@ -19,17 +19,17 @@ object TestConcat {
       .set("spark.akka.frameSize", "50")
     val sc = new SparkContext(conf)
 
-    val data = (0 to 10).collect{
+    val data = (0 to 10).collect {
       case i if i > 7 || i < 3 ⇒
-        (0 to 10).collect{
+        (0 to 10).collect {
           case j if j > 7 || j < 3 ⇒
             val xor =
               if (i > 7 && j > 7) true
               else if (i < 3 && j < 3) true
               else false
-            (0 to 10).collect{
+            (0 to 10).collect {
               case k if k > 7 || k < 3 ⇒
-                (0 to 10).collect{
+                (0 to 10).collect {
                   case l if l > 7 || l < 3 ⇒
                     val xor2 =
                       if (i > 7 && j > 7) true
@@ -71,12 +71,13 @@ object TestConcat {
         val out = trained.predictSoft(in)
         println(s"IN : $in, EXPECTED: $exp, OUTPUT $out")
       }
-    }finally {
+    } finally {
       sc.stop()
     }
   }
 
-  class ConcatLayer extends NetworkConcatLayer[DataVec]{
+  class ConcatLayer extends NetworkConcatLayer[DataVec] {
     override implicit protected val evidenceI: ClassTag[Array[DataVec]] = classTag[Array[DataVec]]
   }
+
 }

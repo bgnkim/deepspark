@@ -17,16 +17,16 @@ object TestXOR {
       .set("spark.akka.frameSize", "50")
     val sc = new SparkContext(conf)
 
-    val data = (0 to 100).collect{
+    val data = (0 to 100).collect {
       case i if i > 75 || i < 25 ⇒
-      (0 to 100).collect{
-        case j if j > 75 || j < 25 ⇒
-        val xor =
-          if (i > 75 && j > 75) true
-          else if (i < 25 && j < 25) true
-          else false
-        (DenseVector[Double](i / 100.0, j / 100.0), xor)
-      }
+        (0 to 100).collect {
+          case j if j > 75 || j < 25 ⇒
+            val xor =
+              if (i > 75 && j > 75) true
+              else if (i < 25 && j < 25) true
+              else false
+            (DenseVector[Double](i / 100.0, j / 100.0), xor)
+        }
     }.flatMap(x ⇒ x)
 
     val train = sc.makeRDD(data)
@@ -53,7 +53,7 @@ object TestXOR {
         val out = trained.predictSoft(in)
         println(s"IN : $in, EXPECTED: $exp, OUTPUT $out")
       }
-    }finally {
+    } finally {
       sc.stop()
     }
   }

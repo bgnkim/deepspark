@@ -12,30 +12,28 @@ import scala.collection.parallel.ParSeq
  * __Layer__ : An Radial Basis Function Layer, with its radial basis.
  */
 class RBFLayer extends TransformLayer {
-  val epsilon: Weight[DataVec] = new Weight[DataVec]
+  /** Centroids **/
   val centers: Weight[Matrix] = new Weight[Matrix]
+  /** Epsilon values vector **/
+  val epsilon: Weight[DataVec] = new Weight[DataVec]
+  /** RBF Activation **/
   var act: RBFActivation = GaussianRBF
 
+  /**
+   * Set the activation function.
+   * @param act Activation function.
+   * @return self
+   */
   def withActivation(act: RBFActivation): this.type = {
     this.act = act
     this
   }
 
-  override def initiateBy(builder: WeightBuilder): this.type = {
-    if (builder != null && NIn > 0 && NOut > 0) {
-      builder.buildVector(epsilon, NOut)
-      builder.buildMatrix(centers, NIn, NOut, noReg = true)
-    }
-
-    this
-  }
-
-  @deprecated
-  override def withInput(in: Int): this.type = this
-
-  @deprecated
-  override def withOutput(out: Int): this.type = this
-
+  /**
+   * Set centroids
+   * @param centroid Sequence of Centroids to be set.
+   * @return self
+   */
   def withCenters(centroid: Seq[DataVec]) = {
     NIn = centroid.head.size
     NOut = centroid.size
@@ -49,33 +47,6 @@ class RBFLayer extends TransformLayer {
     this
   }
 
-  override def write(kryo: Kryo, output: Output): Unit = {
-    kryo.writeClassAndObject(output, act)
-    epsilon.write(kryo, output)
-    centers.write(kryo, output)
-    super.write(kryo, output)
-  }
-
-  override def read(kryo: Kryo, input: Input): Unit = {
-    act = kryo.readClassAndObject(input).asInstanceOf[RBFActivation]
-    epsilon.read(kryo, input)
-    centers.read(kryo, input)
-    super.read(kryo, input)
-  }
-
-  override def loss: Double = epsilon.loss
-
-  override def update(count: Int): Unit = {
-    epsilon.update(count)
-    centers.update(count)
-  }
-
-  /**
-   * Forward computation
-   *
-   * @param x input matrix
-   * @return output matrix
-   */
   override def apply(x: DataVec): DataVec = {
     val diff = centers.value(::, *) - x
     val distances = norm.apply(diff, Axis._0).toDenseVector
@@ -83,28 +54,7 @@ class RBFLayer extends TransformLayer {
     act(pow(wr, 2.0))
   }
 
-  /**
-   * <p>Backward computation.</p>
-   *
-   * @note <p>
-   *       Let this layer have function F composed with function <code> X_i(x) = (e_i :* ||x - C_i||) ** 2 </code>
-   *       and higher layer have function G.
-   *       </p>
-   *
-   *       <p>
-   *       Epsilon is updated with: <code>dG/dE = dG/dF dF/dX dX/dE</code>
-   *       Center is updated with: <code>dG/dC_i = dG/dF dF/dX dX/dC_i</code>
-   *       and propagate <code>dG/dx</code> which is the same as <code>\sum dG/dC_i </code>
-   *       </p>
-   *
-   *       <p>
-   *       For the computation, we only used denominator layout. (cf. Wikipedia Page of Matrix Computation)
-   *       For the computation rules, see "Matrix Cookbook" from MIT.
-   *       </p>
-   *
-   * @return propagated error (in this case, <code>dG/dx</code> )
-   */
-  def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
+  override def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
     val (dE, dC, external) = seq.map { case ((in, out), error) ⇒
       val diff = centers.value(::, *) - in
       val dist = norm.apply(diff, Axis._0).toDenseVector
@@ -146,5 +96,41 @@ class RBFLayer extends TransformLayer {
     centers updateBy dC.reduce(_ += _)
 
     external.seq
+  }
+
+  override def initiateBy(builder: WeightBuilder): this.type = {
+    if (builder != null && NIn > 0 && NOut > 0) {
+      builder.buildVector(epsilon, NOut)
+      builder.buildMatrix(centers, NIn, NOut, noReg = true)
+    }
+
+    this
+  }
+
+  override def loss: Double = epsilon.loss
+
+  override def read(kryo: Kryo, input: Input): Unit = {
+    act = kryo.readClassAndObject(input).asInstanceOf[RBFActivation]
+    epsilon.read(kryo, input)
+    centers.read(kryo, input)
+    super.read(kryo, input)
+  }
+
+  override def update(count: Int): Unit = {
+    epsilon.update(count)
+    centers.update(count)
+  }
+
+  @deprecated("Input size automatically set when centroid attached")
+  override def withInput(in: Int): this.type = this
+
+  @deprecated("Output size automatically set when centroid attached")
+  override def withOutput(out: Int): this.type = this
+
+  override def write(kryo: Kryo, output: Output): Unit = {
+    kryo.writeClassAndObject(output, act)
+    epsilon.write(kryo, output)
+    centers.write(kryo, output)
+    super.write(kryo, output)
   }
 }

@@ -24,7 +24,7 @@ object TestEmbedding {
 
     val letters = new LedgerWords()
     val vectors = mutable.ArrayBuffer[DataVec]()
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ".sliding(1).foreach{
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ".sliding(1).foreach {
       letter ⇒
         letters.words += letter → letters.size
         vectors += DenseVector.rand(5)
@@ -56,7 +56,7 @@ object TestEmbedding {
       "W" → DenseVector(0.0, 0.0, 0.0, 0.0, 1.0),
       "X" → DenseVector(0.0, 0.0, 0.0, 0.0, 1.0),
       "Y" → DenseVector(0.0, 0.0, 0.0, 0.0, 1.0),
-      "Z" → DenseVector(0.0, 0.0, 0.0, 0.0, 1.0)).combinations(3).map{
+      "Z" → DenseVector(0.0, 0.0, 0.0, 0.0, 1.0)).combinations(3).map {
       it ⇒
         val word = it.map(x ⇒ letters.indexOf(x._1)).toArray
         val vec = it.map(_._2).reduceLeft[DataVec] {
@@ -105,7 +105,7 @@ object TestEmbedding {
       }
 
       require(sum(newA - vectorA) != 0.0)
-    }finally {
+    } finally {
       sc.stop()
     }
   }

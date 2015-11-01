@@ -36,18 +36,26 @@ trait Objective extends ((DataVec, DataVec) ⇒ Double) with Serializable {
  *
  * @example
  * {{{val output = net(input)
- *          val err = CosineErr(real, output)
- *          val diff = CosineErr.derivative(real, output)
+ *            val err = CosineErr(real, output)
+ *            val diff = CosineErr.derivative(real, output)
  * }}}
  */
 object CosineErr extends Objective {
   /**
-   * Compute differentiation value of this objective function w.r.t output o
-   *
-   * @param real the expected __real output__, `r`
-   * @param output the computed __output of the network__, `o`
-   * @return differentiation value at `f(x)=fx`, which is __a column vector__
+   * length of given matrix
+   * @param matrix matrix
+   * @return length = sqrt(sum(pow(:, 2)))
    */
+  private def len(matrix: DataVec): Double = {
+    Math.sqrt(sum(pow(matrix, 2.0))).toFloat
+  }
+
+  override def apply(real: DataVec, output: DataVec): Double = {
+    val norm = len(real) * len(output)
+    val dotValue: Double = sum(real :* output)
+    1.0 - (dotValue / norm)
+  }
+
   override def derivative(real: DataVec, output: DataVec): DataVec = {
     val dotValue: Double = sum(real :* output)
 
@@ -70,28 +78,6 @@ object CosineErr extends Objective {
         -(nominator / denominator)
     }
   }
-
-  /**
-   * length of given matrix
-   * @param matrix matrix
-   * @return length = sqrt(sum(pow(:, 2)))
-   */
-  private def len(matrix: DataVec): Double = {
-    Math.sqrt(sum(pow(matrix, 2.0))).toFloat
-  }
-
-  /**
-   * Compute error (loss)
-   *
-   * @param real the expected __real output__
-   * @param output the computed __output of the network__
-   * @return the error
-   */
-  override def apply(real: DataVec, output: DataVec): Double = {
-    val norm = len(real) * len(output)
-    val dotValue: Double = sum(real :* output)
-    1.0 - (dotValue / norm)
-  }
 }
 
 /**
@@ -100,8 +86,8 @@ object CosineErr extends Objective {
  * @note This objective function prefer 0/1 output
  * @example
  * {{{val output = net(input)
- *          val err = CrossEntropyErr(real, output)
- *          val diff = CrossEntropyErr.derivative(real, output)
+ *            val err = CrossEntropyErr(real, output)
+ *            val diff = CrossEntropyErr.derivative(real, output)
  * }}}
  */
 object CrossEntropyErr extends Objective {
@@ -116,25 +102,11 @@ object CrossEntropyErr extends Objective {
    */
   val entropyDiff = (r: Double, o: Double) ⇒ (r - o) / (o * (o - 1.0))
 
-  /**
-   * Compute differentiation value of this objective function w.r.t output o
-   *
-   * @param real the expected __real output__, `r`
-   * @param output the computed __output of the network__, `o`
-   * @return differentiation value at `f(x)=fx`, which is __a column vector__
-   */
-  override def derivative(real: DataVec, output: DataVec): DataVec =
-    DenseVector.tabulate(real.length)(r ⇒ entropyDiff(real(r), output(r)))
-
-  /**
-   * Compute error (loss)
-   *
-   * @param real the expected __real output__
-   * @param output the computed __output of the network__
-   * @return the error
-   */
   override def apply(real: DataVec, output: DataVec): Double =
     sum(DenseVector.tabulate(real.length)(r ⇒ entropy(real(r), output(r))))
+
+  override def derivative(real: DataVec, output: DataVec): DataVec =
+    DenseVector.tabulate(real.length)(r ⇒ entropyDiff(real(r), output(r)))
 }
 
 /**
@@ -142,31 +114,17 @@ object CrossEntropyErr extends Objective {
  *
  * @example
  * {{{val output = net(input)
- *          val err = SquaredErr(real, output)
- *          val diff = SquaredErr.derivative(real, output)
+ *            val err = SquaredErr(real, output)
+ *            val diff = SquaredErr.derivative(real, output)
  * }}}
  */
 object SquaredErr extends Objective {
-  /**
-   * Compute differentiation value of this objective function w.r.t output o
-   *
-   * @param real the expected __real output__, `r`
-   * @param output the computed __output of the network__, `o`
-   * @return differentiation value at `f(x)=fx`, which is __a column vector__
-   */
-  override def derivative(real: DataVec, output: DataVec): DataVec = output - real
-
-  /**
-   * Compute error (loss)
-   *
-   * @param real the expected __real output__
-   * @param output the computed __output of the network__
-   * @return the error
-   */
   override def apply(real: DataVec, output: DataVec): Double = {
     val diff = real - output
     sum(pow(diff, 2.0))
   }
+
+  override def derivative(real: DataVec, output: DataVec): DataVec = output - real
 }
 
 /**
@@ -176,18 +134,16 @@ object SquaredErr extends Objective {
  *
  * @example
  * {{{val output = net(input)
- *           val err = ManhattanErr(real, output)
- *           val diff = ManhattanErr.derivative(real, output)
+ *             val err = ManhattanErr(real, output)
+ *             val diff = ManhattanErr.derivative(real, output)
  * }}}
  */
 object ManhattanErr extends Objective {
-  /**
-   * Compute differentiation value of this objective function w.r.t output o
-   *
-   * @param real the expected __real output__, `r`
-   * @param output the computed __output of the network__, `o`
-   * @return differentiation value at `f(x)=fx`, which is __a column vector__
-   */
+  override def apply(real: DataVec, output: DataVec): Double = {
+    val diff = real - output
+    sum(abs(diff))
+  }
+
   override def derivative(real: DataVec, output: DataVec): DataVec =
     DenseVector.tabulate(real.length) {
       r ⇒
@@ -197,16 +153,4 @@ object ManhattanErr extends Objective {
         else if (target < x) -1.0
         else 0.0
     }
-
-  /**
-   * Compute error (loss)
-   *
-   * @param real the expected __real output__
-   * @param output the computed __output of the network__
-   * @return the error
-   */
-  override def apply(real: DataVec, output: DataVec): Double = {
-    val diff = real - output
-    sum(abs(diff))
-  }
 }

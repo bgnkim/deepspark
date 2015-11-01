@@ -10,12 +10,19 @@ import com.github.nearbydelta.deepspark.word.layer._
 import com.twitter.chill.{Kryo, ScalaKryoInstantiator}
 
 /**
- * Created by bydelta on 15. 10. 19.
+ * Kryo wrapper, which all classes in DeepSpark library are registered.
  */
 object KryoWrap {
+  /**
+   * Kryo object
+   */
   val kryo = new ScalaKryoInstantiator().newKryo()
   init(kryo)
 
+  /**
+   * Register all classes in DeepSpark library into given Kryo object.
+   * @param kryo Kryo object to register classes in DeepSpark library.
+   */
   def init(kryo: Kryo): Unit = {
     // Please, preserve this ordering.
     kryo.register(classOf[LedgerWords])
@@ -67,6 +74,9 @@ object KryoWrap {
   }
 }
 
+/**
+ * Customized serializer for Vector type.
+ */
 object DataVectorSerializer extends Serializer[DataVec] {
   override def write(kryo: Kryo, output: Output, t: DataVec): Unit = {
     output.writeInt(t.length)
@@ -80,6 +90,9 @@ object DataVectorSerializer extends Serializer[DataVec] {
   }
 }
 
+/**
+ * Customized serializer for Matrix type.
+ */
 object MatrixSerializer extends Serializer[Matrix] {
   override def write(kryo: Kryo, output: Output, t: Matrix): Unit = {
     output.writeInt(t.rows)

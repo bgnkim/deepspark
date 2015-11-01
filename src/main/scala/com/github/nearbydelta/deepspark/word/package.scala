@@ -6,16 +6,23 @@ import scala.collection.mutable
 import scala.language.implicitConversions
 
 /**
- * Created by bydelta on 15. 10. 4.
+ * Package: deepspark.word
+ *
+ * Package includes related package for word
  */
-package object wordvec {
+package object word {
+  /** Type: Update store of word list, or ledger */
   type LedgerNote = mutable.Map[Int, DataVec]
+  /** Type: Word list, or ledger */
   type ListLedger = IndexedSeq[DataVec]
 
+  /**
+   * Zero object for Ledger Note.
+   */
   implicit object LedgerNoteZero extends Zero[LedgerNote] {
-    override def apply(initialValue: LedgerNote): LedgerNote = apply()
-
     def apply(): LedgerNote = mutable.HashMap()
+
+    override def apply(initialValue: LedgerNote): LedgerNote = apply()
   }
 
 }

@@ -21,44 +21,10 @@ class RNNLedger(var layer: TransformLayer)
 
   def this() = this(null)
 
-  override def withModel(model: LedgerModel): this.type = {
-    NOut = model.dimension
-    layer.setUpdatable(false)
-    super.withModel(model)
-  }
-
   def initLayerBy(builder: WeightBuilder): this.type = {
     layerBuilder = builder
     layer.initiateBy(builder)
     this
-  }
-
-  override def loss: Double = layer.loss + super.loss
-
-  override def write(kryo: Kryo, output: Output): Unit = {
-    kryo.writeClassAndObject(output, layerBuilder)
-    kryo.writeClassAndObject(output, layer)
-    super.write(kryo, output)
-  }
-
-  override def read(kryo: Kryo, input: Input): Unit = {
-    layerBuilder = kryo.readClassAndObject(input).asInstanceOf[WeightBuilder]
-    layer = kryo.readClassAndObject(input).asInstanceOf[TransformLayer]
-    layer.initiateBy(layerBuilder)
-    super.read(kryo, input)
-  }
-
-  override def apply(x: Array[Int]): Array[DataVec] = {
-    val seq = x.map(vectorOf)
-    if (seq.nonEmpty)
-      seq.tail.foldLeft(Seq(seq.head)) {
-        case (leftPhrases, curr) ⇒
-          val input = DenseVector.vertcat(leftPhrases.head, curr)
-          val traceResult = layer.forward(input)
-          traceResult +: leftPhrases
-      }.toArray
-    else
-      Array(pad)
   }
 
   @tailrec
@@ -81,6 +47,19 @@ class RNNLedger(var layer: TransformLayer)
       update(errorLeft, words.tail, in.tail)
     }
 
+  override def apply(x: Array[Int]): Array[DataVec] = {
+    val seq = x.map(vectorOf)
+    if (seq.nonEmpty)
+      seq.tail.foldLeft(Seq(seq.head)) {
+        case (leftPhrases, curr) ⇒
+          val input = DenseVector.vertcat(leftPhrases.head, curr)
+          val traceResult = layer.forward(input)
+          traceResult +: leftPhrases
+      }.toArray
+    else
+      Array(pad)
+  }
+
   override def backward(seq: ParSeq[((Array[Int], Array[DataVec]), DataVec)]): Seq[DataVec] = {
     seq.foreach { case ((in, out), err) ⇒
       if (in.nonEmpty)
@@ -90,5 +69,26 @@ class RNNLedger(var layer: TransformLayer)
     }
 
     null
+  }
+
+  override def loss: Double = layer.loss + super.loss
+
+  override def read(kryo: Kryo, input: Input): Unit = {
+    layerBuilder = kryo.readClassAndObject(input).asInstanceOf[WeightBuilder]
+    layer = kryo.readClassAndObject(input).asInstanceOf[TransformLayer]
+    layer.initiateBy(layerBuilder)
+    super.read(kryo, input)
+  }
+
+  override def withModel(model: LedgerModel): this.type = {
+    NOut = model.dimension
+    layer.setUpdatable(false)
+    super.withModel(model)
+  }
+
+  override def write(kryo: Kryo, output: Output): Unit = {
+    kryo.writeClassAndObject(output, layerBuilder)
+    kryo.writeClassAndObject(output, layer)
+    super.write(kryo, output)
   }
 }
