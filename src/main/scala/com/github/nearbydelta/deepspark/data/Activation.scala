@@ -322,17 +322,6 @@ object Sigmoid extends Activation {
  *            val diff = Softmax.derivative(fx)}}}
  */
 object Softmax extends Activation {
-  @tailrec
-  private def derivCoord(fx: DataVec, res: Matrix, r: Int, c: Int): Matrix =
-    if (r >= 0) {
-      val dfdx = (if (r == c) 1 else 0) - fx(c)
-      res.update(r, c, res(r, c) * dfdx)
-
-      if (c > 0) derivCoord(fx, res, r, c - 1)
-      else derivCoord(fx, res, r - 1, fx.length - 1)
-    } else
-      res
-
   /**
    * Compute mapping for `x`
    *
@@ -348,11 +337,65 @@ object Softmax extends Activation {
   }
 
   override def derivative(fx: DataVec): Matrix = {
-    val res: Matrix = fx * DenseVector.ones[Double](fx.length).t
+    val res: Matrix = DenseMatrix.eye[Double](fx.length)
+    res(::, *) -= fx
+    fx.foreachPair {
+      case (k, v) ⇒
+        res(k, ::) *= v
+    }
 
-    // Note that (i, j)-entry of deriviative is dF_i / dX_j
-    // and dF_i / dX_j = F(i) * (Delta_ij - F(j)).
-    derivCoord(fx, res, res.rows - 1, res.cols - 1)
+    // Note that (i, j)-entry of deriviative is dF_j / dX_i
+    // and dF_j / dX_i = F(j) * (Delta_ij - F(i)).
+    res
+  }
+
+  override def initialize(fanIn: Int, fanOut: Int): (Double, Double) = {
+    val range = (Math.sqrt(6.0 / (fanIn + fanOut)) * 4.0).toFloat
+    (-range, range)
+  }
+}
+
+/**
+ * __Activation Function__: Softmax function for [[CrossEntropyErr]]
+ *
+ * @note {{{softmax(x)_i = exp(x_i) / sum(exp(x_i))}}}
+ *       We assumed the input of activation is a row vector.<br/>
+ *       We assumed the error function is [[CrossEntropyErr]].
+ * @example
+ * {{{val fx = Softmax(0.0)
+ *              val diff = Softmax.derivative(fx)}}}
+ */
+object SoftmaxCEE extends Activation {
+  /**
+   * Compute mapping for `x`
+   *
+   * @param x the __input__ matrix. ''Before application, input should be summed already.''
+   * @return value of `f(x)`
+   */
+  override def apply(x: DataVec): DataVec = {
+    // exp(x_k) / sum(exp(x_i)) is the same for exp(x_k - max(x)) / sum(exp(x_i - max(x)))
+    val maxV: Double = max(x)
+    val expv: DataVec = exp(x :- maxV)
+    val normalize: Double = sum(expv)
+    expv :/= normalize
+  }
+
+  /**
+   * @inheritdoc
+   * @note Assumes [[CrossEntropyErr]] objective function, and in that case,
+   *       CEE's derivative -1/out will be canceled with Softmax derivation term out(delta_ij-out)in.
+   *       Hence, we designed softmax with derivation term (delta_ij-out)in.
+   */
+  override def derivative(fx: DataVec): Matrix = {
+    // Note that (i, j)-entry of deriviative is dF_j / dX_i
+    // and dF_j / dX_i = F(j) * (Delta_ij - F(i)).
+    // but since F(j) will be canceled, we used only Delta_ij - F(i).
+    // This can be easily implemented by copying -F for every column,
+    // And add 1 for diagonal entries.
+
+    val res: Matrix = DenseMatrix.eye[Double](fx.length)
+    res(::, *) -= fx
+    res
   }
 
   override def initialize(fanIn: Int, fanOut: Int): (Double, Double) = {

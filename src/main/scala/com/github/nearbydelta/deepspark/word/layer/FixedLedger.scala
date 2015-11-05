@@ -2,7 +2,6 @@ package com.github.nearbydelta.deepspark.word.layer
 
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.{Input, Output}
-import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.layer.InputLayer
 import com.github.nearbydelta.deepspark.word._
 import org.apache.spark.SparkContext
@@ -14,21 +13,15 @@ import scala.reflect.{ClassTag, classTag}
  * __Layer__: Basic, Fully-connected Layer
  *
  */
-trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
+trait FixedLedger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
   @transient implicit override protected val evidenceI: ClassTag[Array[Int]] = classTag[Array[Int]]
-  @transient var algorithm: LedgerAlgorithm = _
   var bcModel: Broadcast[LedgerModel] = _
-  @transient var builder: LedgerBuilder = _
-  var delta: LedgerNote = _
   @transient var model: LedgerModel = _
   protected var padID = -1
 
-  def withModel(model: LedgerModel, builder: LedgerBuilder): this.type = {
+  def withModel(model: LedgerModel): this.type = {
     this.model = model
-    this.builder = builder
     this.padID = model.padID
-    delta = LedgerNoteZero()
-    algorithm = builder.getUpdater(this.model.vectors, delta)
     this
   }
 
@@ -36,17 +29,6 @@ trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
     if (padID == -1) null
     else if (bcModel != null) vectorOf(bcModel.value.padID)
     else vectorOf(padID)
-
-  protected def updateWord(word: Int, dx: DataVec): Unit =
-    if (word != -1) {
-      delta.synchronized {
-        delta.get(word) match {
-          case Some(x) ⇒ x += dx
-          case None ⇒
-            delta(word) = dx.copy
-        }
-      }
-    }
 
   protected def vectorOf(str: Int) =
     if (bcModel != null) bcModel.value.vectorAt(str)
@@ -56,15 +38,12 @@ trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
     bcModel = sc.broadcast(model)
   }
 
-  override def loss: Double = algorithm.loss
+  override def loss: Double = 0.0
 
   override def read(kryo: Kryo, input: Input): Unit = {
-    builder = kryo.readClassAndObject(input).asInstanceOf[LedgerBuilder]
     val model = new LedgerModel
     model.read(kryo, input)
-
-    require(model.size > 0, "Model is empty!")
-    withModel(model, builder)
+    withModel(model)
     super.read(kryo, input)
   }
 
@@ -79,7 +58,6 @@ trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
   override def withOutput(out: Int): this.type = this
 
   override def write(kryo: Kryo, output: Output): Unit = {
-    kryo.writeClassAndObject(output, builder)
     model.write(kryo, output)
     super.write(kryo, output)
   }

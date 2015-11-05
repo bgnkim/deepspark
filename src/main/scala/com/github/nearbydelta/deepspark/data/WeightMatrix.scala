@@ -60,20 +60,18 @@ trait WeightBuilder extends Serializable with KryoSerializable {
   /**
    * Get Update Algorithm for given value.
    * @param value Target of alorithm.
-   * @param delta A variable for storing change amount.
    * @param noReg True if this value does not require regularization.
    * @return Algorithm object
    */
-  protected def getUpdater(value: Matrix, delta: Matrix, noReg: Boolean): Algorithm[Matrix]
+  protected def getUpdater(value: Matrix, noReg: Boolean): Algorithm[Matrix]
 
   /**
    * Get Update Algorithm for given value.
    * @param value Target of alorithm.
-   * @param delta A variable for storing change amount.
    * @param noReg True if this value does not require regularization.
    * @return Algorithm object
    */
-  protected def getUpdater(value: DataVec, delta: DataVec, noReg: Boolean): Algorithm[DataVec]
+  protected def getUpdater(value: DataVec, noReg: Boolean): Algorithm[DataVec]
 
   /**
    * Build weight update algorithm for given Weight object.
@@ -84,7 +82,7 @@ trait WeightBuilder extends Serializable with KryoSerializable {
    */
   private def buildTo(weight: Weight[Matrix], value: Matrix, noReg: Boolean): Weight[Matrix] = {
     weight withValue value
-    weight withUpdater getUpdater(value, weight.getDelta, noReg)
+    weight withUpdater getUpdater(value, noReg)
     weight
   }
 
@@ -97,7 +95,7 @@ trait WeightBuilder extends Serializable with KryoSerializable {
    */
   private def buildTo(weight: Weight[DataVec], value: DataVec, noReg: Boolean): Weight[DataVec] = {
     weight withValue value
-    weight withUpdater getUpdater(value, weight.getDelta, noReg)
+    weight withUpdater getUpdater(value, noReg)
     weight
   }
 }
@@ -117,23 +115,51 @@ object Weight {
   /**
    * Check scale, and do scaling down if required.
    * @param x Target value
-   * @param normImpl Norm implementation (implicit)
-   * @param mul Multiplication of Scalar inplace (implicit)
-   * @tparam X Either Matrix or DataVec
    * @return Scaled down value.
    */
-  def scaleCheck[X](x: X)
-                   (implicit normImpl: norm.Impl[X, Double], mul: OpMulScalar.InPlaceImpl2[X, Double]): X =
+  def check[K, X <: Tensor[K, Double]](x: X)
+                                      (implicit normImpl: norm.Impl[X, Double],
+                                       mul: OpMulScalar.Impl2[X, Double, X]): X = {
+    clearInvalid[K, X](x)
     clipping match {
       case Some(thr) ⇒
-        val n = normImpl(x)
-        if (n >= thr) {
-          mul(x, thr / n)
+        val M = x.valuesIterator.map(Math.abs).max
+        val sqSize = Math.sqrt(x.size)
+
+        // If M * sqrt(size) < threshold, norm < threshold.
+        // Because norm = sqrt(sum(x^2)) < sqrt(M^2 * size)
+        if (M < thr / sqSize) {
+          x
+        } else {
+          // Divide by Max value first, to avoid overflow error.
+          val nX = mul(x, 1 / M)
+          val n = normImpl(nX)
+
+          // Original clipping was multiplying threshold/norm.
+          // Since we normalized, divide threshold by M.
+          val t = thr / M
+          if (n >= t) {
+            mul(nX, t / n)
+          } else {
+            x
+          }
         }
-        x
       case _ ⇒
         x
     }
+  }
+
+  def clearInvalid[K, X <: Tensor[K, Double]](x: X, resetNaN: Double = 0.0) = {
+    x.keySet.par.foreach { key ⇒
+      val d = x(key)
+      if (d.isNaN) x.update(key, resetNaN)
+      else if (d.isInfinity) x.update(key, Double.MaxValue * d.signum)
+    }
+  }
+
+  def scaleCheck(x: DataVec) = check[Int, DataVec](x)
+
+  def scaleCheck(x: Matrix) = check[(Int, Int), Matrix](x)
 
   /**
    * Set scaling down threshold.
@@ -148,19 +174,11 @@ object Weight {
  * Class for Weight object.
  * @tparam X Either Matrix or DataVec
  */
-class Weight[X] extends Serializable with KryoSerializable {
-  /** Store for update amount. **/
-  @transient private var _delta: X = _
+class Weight[X <: Tensor[_, Double]] extends Serializable with KryoSerializable {
   /** Update algorithm **/
   @transient private var _updater: Algorithm[X] = _
   /** Value **/
   private var _x: X = null.asInstanceOf[X]
-
-  /**
-   * Get accumulated update amount.
-   * @return Accumualted update amount
-   */
-  def getDelta = _delta
 
   /**
    * Check if the weight is successfully defined.
@@ -176,34 +194,27 @@ class Weight[X] extends Serializable with KryoSerializable {
   def loss(implicit normImpl: norm.Impl[X, Double]): Double =
     if (_updater != null) {
       val n = normImpl(_x)
-      n * n * _updater.l2factor
+      n * n * _updater.l2factor / 2.0
     } else {
       throw new IllegalStateException("Weight instance does not have any Algorithm instance")
     }
 
   /**
    * Execute update algorithm.
-   * @param count Count of minibatch instances.
+   * @param seq Sequence of delta weights, per each instance.
    */
-  def update(count: Int): Unit =
+  def update(seq: collection.GenSeq[X])(implicit add: OpAdd.InPlaceImpl2[X, X]): Unit =
     if (_updater != null) {
-      _updater.update(count)
+      if (seq.nonEmpty) {
+        val delta = seq.reduce[X] { case (x, y) ⇒
+          add(x, y)
+          x
+        }
+        _updater.update(delta)
+      }
     } else {
       throw new IllegalStateException("Weight instance does not have any Algorithm instance")
     }
-
-  /**
-   * Update this weight by given amount.
-   * @param x amount of update, i.e. gradient.
-   * @param param$1 Norm implementation (implicit)
-   * @param param$2 Multiplication of Scalar inplace implementation (implicit)
-   * @param addInplace Add in place implementation (implicit)
-   */
-  def updateBy(x: X)(implicit param$1: norm.Impl[X, Double], param$2: OpMulScalar.InPlaceImpl2[X, Double],
-                     addInplace: OpAdd.InPlaceImpl2[X, X]): Unit = {
-    // Use Scaling Down Trick (Pascanu et al., 2013)
-    addInplace(_delta, Weight.scaleCheck(x))
-  }
 
   /**
    * Value of this weight.
@@ -224,12 +235,10 @@ class Weight[X] extends Serializable with KryoSerializable {
   /**
    * Set value for this weight.
    * @param x Value
-   * @param zero Zero object for this value. (implicit)
    * @return self.
    */
-  def withValue(x: X)(implicit zero: Zero[X]) = {
+  def withValue(x: X) = {
     _x = x
-    _delta = zero(x)
     this
   }
 
@@ -246,18 +255,17 @@ class Weight[X] extends Serializable with KryoSerializable {
  * __Trait__ for update algorithm
  * @tparam X Either Matrix or DataVec
  */
-trait Algorithm[X] {
+trait Algorithm[X <: QuasiTensor[_, Double]] {
   /** L2 regularization factor **/
   val l2factor: Double
   /** Value **/
   protected val x: X
-  /** Accumulated update amount **/
-  protected val dW: X
 
   /**
    * Execute the algorithm for given __Δweight__ and __weights__
+   * @param dW delta weight.
    */
-  def update(count: Int): Unit
+  def update(dW: X): Unit
 }
 
 /**
@@ -290,16 +298,15 @@ class AdaDelta(var l2decay: Double = 0.0001,
     output.writeDouble(historyEpsilon)
   }
 
-  override protected def getUpdater(value: Matrix, delta: Matrix, noReg: Boolean): Algorithm[Matrix] =
-    new Updater[Matrix](value, delta, if (noReg) 0.0 else l2decay)
+  override protected def getUpdater(value: Matrix, noReg: Boolean): Algorithm[Matrix] =
+    new Updater[(Int, Int), Matrix](value, if (noReg) 0.0 else l2decay)
 
-  override protected def getUpdater(value: DataVec, delta: DataVec, noReg: Boolean): Algorithm[DataVec] =
-    new Updater[DataVec](value, delta, if (noReg) 0.0 else l2decay)
+  override protected def getUpdater(value: DataVec, noReg: Boolean): Algorithm[DataVec] =
+    new Updater[Int, DataVec](value, if (noReg) 0.0 else l2decay)
 
   /**
    * Algorithm implementation.
    * @param x Value
-   * @param dW Store for update amount.
    * @param l2factor L,,2,, Regularization factor
    * @param zero Zero object of value (implicit)
    * @param elemMul Scalar Multiplication implementation (implicit)
@@ -310,33 +317,28 @@ class AdaDelta(var l2decay: Double = 0.0001,
    * @param root Square root implementation (implicit)
    * @param subInplace Inplace subtraction implementation (implicit)
    * @param elemDiv Element-wise division implementation (implicit)
-   * @param set Assign implementation (implicit)
    * @tparam X Either Matrix or DataVec
    */
-  class Updater[X](override protected val x: X,
-                   override protected val dW: X,
-                   override val l2factor: Double)
-                  (implicit private val zero: Zero[X],
-                   implicit private val elemMul: OpMulScalar.Impl2[X, X, X],
-                   implicit private val mul: OpMulScalar.Impl2[X, Double, X],
-                   implicit private val mulScalarInplace: OpMulScalar.InPlaceImpl2[X, Double],
-                   implicit private val addInplace: OpAdd.InPlaceImpl2[X, X],
-                   implicit private val addScalar: OpAdd.Impl2[X, Double, X],
-                   implicit private val root: sqrt.Impl[X, X],
-                   implicit private val subInplace: OpSub.InPlaceImpl2[X, X],
-                   implicit private val elemDiv: OpDiv.Impl2[X, X, X],
-                   implicit private val set: OpSet.InPlaceImpl2[X, Double]) extends Algorithm[X] {
+  class Updater[K, X <: Tensor[K, Double]](override protected val x: X,
+                                           override val l2factor: Double)
+                                          (implicit private val zero: Zero[X],
+                                           implicit private val elemMul: OpMulScalar.Impl2[X, X, X],
+                                           implicit private val mul: OpMulScalar.Impl2[X, Double, X],
+                                           implicit private val mulScalarInplace: OpMulScalar.InPlaceImpl2[X, Double],
+                                           implicit private val addInplace: OpAdd.InPlaceImpl2[X, X],
+                                           implicit private val addScalar: OpAdd.Impl2[X, Double, X],
+                                           implicit private val root: sqrt.Impl[X, X],
+                                           implicit private val subInplace: OpSub.InPlaceImpl2[X, X],
+                                           implicit private val elemDiv: OpDiv.Impl2[X, X, X],
+                                           implicit private val normImpl: norm.Impl[X, Double])
+    extends Algorithm[X] {
     /** Update history **/
     private lazy val deltaSq = zero(x)
     /** Gradient history **/
     private lazy val gradSq = zero(x)
 
-    /**
-     * Execute the algorithm for given __Δ(weight)__ and __weights__
-     */
-    override def update(count: Int): Unit = {
-      val d = mul(x, l2decay * 2)
-      mulScalarInplace(dW, 1.0 / count)
+    override def update(dW: X): Unit = {
+      val d = mul(x, l2decay)
       addInplace(d, dW)
 
       mulScalarInplace(gradSq, historyDecay)
@@ -349,12 +351,11 @@ class AdaDelta(var l2decay: Double = 0.0001,
 
       val dw = elemMul(d, rate)
       subInplace(x, dw)
+      Weight.clearInvalid[K, X](x)
 
       mulScalarInplace(deltaSq, historyDecay)
       val decayDW = elemMul(dw, dw)
       addInplace(deltaSq, mul(decayDW, 1.0 - historyDecay))
-
-      set(dW, 0.0)
     }
   }
 
@@ -389,16 +390,15 @@ class AdaGrad(var rate: Double = 0.6,
     output.writeDouble(fudgeFactor)
   }
 
-  override protected def getUpdater(value: Matrix, delta: Matrix, noReg: Boolean): Algorithm[Matrix] =
-    new Updater[Matrix](value, delta, if (noReg) 0.0 else l2decay)
+  override protected def getUpdater(value: Matrix, noReg: Boolean): Algorithm[Matrix] =
+    new Updater[(Int, Int), Matrix](value, if (noReg) 0.0 else l2decay)
 
-  override protected def getUpdater(value: DataVec, delta: DataVec, noReg: Boolean): Algorithm[DataVec] =
-    new Updater[DataVec](value, delta, if (noReg) 0.0 else l2decay)
+  override protected def getUpdater(value: DataVec, noReg: Boolean): Algorithm[DataVec] =
+    new Updater[Int, DataVec](value, if (noReg) 0.0 else l2decay)
 
   /**
    * Algorithm implementation.
    * @param x Value
-   * @param dW Store for update amount.
    * @param l2factor L,,2,, Regularization factor
    * @param zero Zero object of value (implicit)
    * @param elemMul Scalar Multiplication implementation (implicit)
@@ -408,37 +408,34 @@ class AdaGrad(var rate: Double = 0.6,
    * @param root Square root implementation (implicit)
    * @param subInplace Inplace subtraction implementation (implicit)
    * @param div Scalar division implementation (implicit)
-   * @param set Assign implementation (implicit)
    * @tparam X Either Matrix or DataVec
    */
-  class Updater[X](override protected val x: X,
-                   override protected val dW: X,
-                   override val l2factor: Double)
-                  (implicit private val zero: Zero[X],
-                   implicit private val elemMul: OpMulScalar.Impl2[X, X, X],
-                   implicit private val mul: OpMulScalar.Impl2[X, Double, X],
-                   implicit private val add: OpAdd.Impl2[X, Double, X],
-                   implicit private val addInplace: OpAdd.InPlaceImpl2[X, X],
-                   implicit private val root: sqrt.Impl[X, X],
-                   implicit private val subInplace: OpSub.InPlaceImpl2[X, X],
-                   implicit private val div: OpDiv.Impl2[Double, X, X],
-                   implicit private val set: OpSet.InPlaceImpl2[X, Double]) extends Algorithm[X] {
+  class Updater[K, X <: Tensor[K, Double]](override protected val x: X,
+                                           override val l2factor: Double)
+                                          (implicit private val zero: Zero[X],
+                                           implicit private val elemMul: OpMulScalar.Impl2[X, X, X],
+                                           implicit private val mul: OpMulScalar.Impl2[X, Double, X],
+                                           implicit private val add: OpAdd.Impl2[X, Double, X],
+                                           implicit private val addInplace: OpAdd.InPlaceImpl2[X, X],
+                                           implicit private val root: sqrt.Impl[X, X],
+                                           implicit private val subInplace: OpSub.InPlaceImpl2[X, X],
+                                           implicit private val div: OpDiv.Impl2[Double, X, X],
+                                           implicit private val normImpl: norm.Impl[X, Double])
+    extends Algorithm[X] {
     /** accumulated history of parameter updates */
     private lazy val history = zero(x)
 
     /**
      * Execute the algorithm for given __Δweight__ and __weights__
      */
-    override def update(count: Int): Unit = {
-      val d = mul(x, l2decay * 2)
-      addInplace(d, mul(dW, 1.0 / count))
-
+    override def update(dW: X): Unit = {
+      val d = mul(x, l2decay)
+      addInplace(d, dW)
       addInplace(history, elemMul(d, d))
 
       val dw = elemMul(d, div(rate, add(root(history), fudgeFactor)))
       subInplace(x, dw)
-
-      set(dW, 0.0)
+      Weight.clearInvalid[K, X](x)
     }
   }
 }
@@ -472,44 +469,40 @@ class StochasticGradientDescent(var rate: Double = 0.03,
     output.writeDouble(momentum)
   }
 
-  override protected def getUpdater(value: Matrix, delta: Matrix, noReg: Boolean): Algorithm[Matrix] =
-    new Updater[Matrix](value, delta, if (noReg) 0.0 else l2decay)
+  override protected def getUpdater(value: Matrix, noReg: Boolean): Algorithm[Matrix] =
+    new Updater[(Int, Int), Matrix](value, if (noReg) 0.0 else l2decay)
 
-  override protected def getUpdater(value: DataVec, delta: DataVec, noReg: Boolean): Algorithm[DataVec] =
-    new Updater[DataVec](value, delta, if (noReg) 0.0 else l2decay)
+  override protected def getUpdater(value: DataVec, noReg: Boolean): Algorithm[DataVec] =
+    new Updater[Int, DataVec](value, if (noReg) 0.0 else l2decay)
 
   /**
    * Algorithm implementation.
    * @param x Value
-   * @param dW Store for update amount.
    * @param l2factor L,,2,, Regularization factor
    * @param zero Zero object of value (implicit)
    * @param mul Multiplication implementation (implicit)
    * @param mulInplace Inplace Scalar Multiplication implementation (implicit)
    * @param addInplace Inplace addition implementation (implicit)
    * @param subInplace Inplace subtraction implementation (implicit)
-   * @param set Assign implementation (implicit)
    * @tparam X Either Matrix or DataVec
    */
-  class Updater[X](override protected val x: X,
-                   override protected val dW: X,
-                   override val l2factor: Double)
-                  (implicit private val zero: Zero[X],
-                   implicit private val mul: OpMulScalar.Impl2[X, Double, X],
-                   implicit private val mulInplace: OpMulScalar.InPlaceImpl2[X, Double],
-                   implicit private val addInplace: OpAdd.InPlaceImpl2[X, X],
-                   implicit private val subInplace: OpSub.InPlaceImpl2[X, X],
-                   implicit private val set: OpSet.InPlaceImpl2[X, Double]) extends Algorithm[X] {
+  class Updater[K, X <: Tensor[K, Double]](override protected val x: X,
+                                           override val l2factor: Double)
+                                          (implicit private val zero: Zero[X],
+                                           implicit private val mul: OpMulScalar.Impl2[X, Double, X],
+                                           implicit private val mulInplace: OpMulScalar.InPlaceImpl2[X, Double],
+                                           implicit private val addInplace: OpAdd.InPlaceImpl2[X, X],
+                                           implicit private val subInplace: OpSub.InPlaceImpl2[X, X],
+                                           implicit private val normImpl: norm.Impl[X, Double])
+    extends Algorithm[X] {
     /** the last update of parameters */
     private lazy val lastDelta: X = if (momentum != 0) zero(x) else null.asInstanceOf[X]
 
     /**
      * Execute the algorithm for given __Δweight__ and __weights__
      */
-    def update(count: Int): Unit = {
-      mulInplace(dW, 1.0 / count)
-
-      val d = mul(x, l2decay * 2)
+    def update(dW: X): Unit = {
+      val d = mul(x, l2decay)
       addInplace(d, dW)
       if (lastDelta != null) {
         mulInplace(lastDelta, momentum)
@@ -517,8 +510,7 @@ class StochasticGradientDescent(var rate: Double = 0.03,
         subInplace(x, lastDelta)
       } else
         subInplace(x, d)
-
-      set(dW, 0.0)
+      Weight.clearInvalid[K, X](x)
     }
   }
 }

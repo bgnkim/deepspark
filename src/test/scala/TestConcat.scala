@@ -48,18 +48,16 @@ object TestConcat {
     try {
       val builder = new AdaGrad(l2decay = 0.00001, rate = 0.01)
       val input1 = new SimpleNetwork[DataVec]()
-        .initiateBy(builder)
         .add(new BasicLayer withInput 2 withOutput 4)
         .add(new BasicLayer withInput 4 withOutput 1)
       val input2 = new SimpleNetwork[DataVec]()
-        .initiateBy(builder)
         .add(new BasicLayer withInput 2 withOutput 4)
         .add(new BasicLayer withInput 4 withOutput 1)
       val concat = new ConcatLayer().addNetwork(input1).addNetwork(input2)
       val network = new GeneralNetwork[Array[DataVec], Boolean](concat)
-        .initiateBy(builder)
         .add(new BasicLayer withInput 2 withOutput 4)
         .add(new BasicLayer withInput 4 withOutput 1)
+        .initiateBy(builder)
 
       require(network.NOut == 1)
 

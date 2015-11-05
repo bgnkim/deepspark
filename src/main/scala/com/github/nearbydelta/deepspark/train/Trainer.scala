@@ -86,15 +86,17 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
       if (file.exists && param.reuseSaveData) {
         loadStatus()
         logger info f"We detected a network saved at $bestIter%4d Iteration." +
-          f"with loss $prevLossE%8.5f + $prevLossW%8.5f. We use it as initial value. Loss will be reset."
-        prevLossE = Double.PositiveInfinity
-      } else
+          f"with loss $prevLossE%8.5f + $prevLossW%8.5f. We use it as initial value."
+      } else {
+        prevLossE = getValidationErr
+        prevLossW = network.loss
         saveStatus()
+      }
       network.setUpdatable(true)
-      println("Start training...\n Estimated Time: NONE\n")
 
       val epoch = bestIter * validationPeriod
       val patience = Math.min(Math.max(5, bestIter) * (param.waitAfterUpdate + 1), param.maxIter)
+      printProgress(bestIter, patience, prevLossE, prevLossW)
       trainSmallBatch(epoch, patience)
       loadStatus()
       network.setUpdatable(false)
@@ -119,11 +121,9 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
     var prevloss = prevLossW + prevLossE
 
     if ((epoch + 1) % validationPeriod == 0) {
-      network.broadcast(trainSet.context)
       val train = getValidationErr
       val weight = network.loss
       val loss = train + weight
-      network.unbroadcast()
 
       if (loss.isNaN || loss.isInfinity) {
         logger info s"Because of some issue, loss became $loss (train $train, weight $weight). Please check."
@@ -202,7 +202,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
     val wait = patience / param.maxIter.toFloat
     val header = f"\033[4m$name\033[24m $iter%4d/$patience%4d \033[0m["
     val footer = f" E + W = $lossE%7.5f + $lossW%7.5f "
-    val secondFooter = f" vs $prevLossE%7.5f + $prevLossW%7.5f @ $bestIter%4d "
+    val secondFooter = f"[@$bestIter%4d] $prevLossE%7.5f + $prevLossW%7.5f "
 
     val buf = new StringBuilder(s"\033[3A\033[${columns}D\033[2K \033[1;33m$header\033[46;36m")
     val total = columns - header.length - footer.length + 10
@@ -216,7 +216,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
     buf.append(s"$footer\033[0m\n\033[2K")
 
     val timeline =
-      if (iter > 1.0) {
+      if (iter > 0) {
         val now = System.currentTimeMillis()
         val remainA = (now - startAt) / iter * patience
         val etaA = startAt + remainA
@@ -229,9 +229,10 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
         " END: CALCULATING..."
       }
     buf.append(timeline)
-    buf.append(" " * (columns - timeline.length - secondFooter.length))
+    buf.append(" " * (columns - timeline.length - secondFooter.length - 1))
+    buf.append("\033[34m")
     buf.append(secondFooter)
-    buf.append("\n")
+    buf.append("\033[0m\n")
 
     println(buf.result())
   }

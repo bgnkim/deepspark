@@ -5,7 +5,7 @@ import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.layer.TransformLayer
-import com.github.nearbydelta.deepspark.word.LedgerModel
+import com.github.nearbydelta.deepspark.word.{LedgerBuilder, LedgerModel}
 
 import scala.annotation.tailrec
 import scala.collection.parallel.ParSeq
@@ -20,12 +20,6 @@ class RNNLedger(var layer: TransformLayer)
   private var layerBuilder: WeightBuilder = _
 
   def this() = this(null)
-
-  def initLayerBy(builder: WeightBuilder): this.type = {
-    layerBuilder = builder
-    layer.initiateBy(builder)
-    this
-  }
 
   @tailrec
   final def update(error: DataVec, words: Array[Int], in: Array[DataVec]): Unit =
@@ -68,7 +62,15 @@ class RNNLedger(var layer: TransformLayer)
         updateWord(padID, err)
     }
 
+    algorithm.update()
+
     null
+  }
+
+  override def initiateBy(builder: WeightBuilder): this.type = {
+    layerBuilder = builder
+    layer.initiateBy(builder)
+    this
   }
 
   override def loss: Double = layer.loss + super.loss
@@ -80,10 +82,12 @@ class RNNLedger(var layer: TransformLayer)
     super.read(kryo, input)
   }
 
-  override def withModel(model: LedgerModel): this.type = {
+  override def withModel(model: LedgerModel, builder: LedgerBuilder): this.type = {
     NOut = model.dimension
+    layer.withInput(model.dimension * 2)
+    layer.withOutput(model.dimension)
     layer.setUpdatable(false)
-    super.withModel(model)
+    super.withModel(model, builder)
   }
 
   override def write(kryo: Kryo, output: Output): Unit = {

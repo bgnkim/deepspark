@@ -10,11 +10,8 @@ import scala.collection.parallel.ParSeq
 
 /**
  * __Layer__ : An Radial Basis Function Layer, with its radial basis.
- *
- * @note This is a RBF layer, mainly the same with 3-phrase RBF in paper
- *       [[http://www.sciencedirect.com/science/article/pii/S0893608001000272 Three learning phrases for radial-basis-function networks]]
  */
-class RBFLayer extends TransformLayer {
+class TwoPhraseRBFLayer extends TransformLayer {
   /** Centroids **/
   val centers: Weight[Matrix] = new Weight[Matrix]
   /** Epsilon values vector **/
@@ -59,7 +56,7 @@ class RBFLayer extends TransformLayer {
     }.toSeq.groupBy(_._1).foreach {
       case (id, seq) ⇒
         val d = seq.map(_._2).sorted.take(minDistances).sum / minDistances
-        // Since the paper assumes form of d^2 / 2s_j^2, but we're using (e_j*d)^2. 
+        // Since the paper assumes form of d^2 / 2s_j^2, but we're using (e_j*d)^2.
         // Note that e_j = 1/(sqrt(2)*s_j). The paper suggests, s_j = alpha * average distance
         val sigma = alpha * d
         val eInv = Math.sqrt(2) * sigma
@@ -81,45 +78,44 @@ class RBFLayer extends TransformLayer {
       DenseVector.zeros[Double](NOut)
 
   override def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
-    val (dE, dC, external) = seq.collect { case ((in, out), error) if in != null ⇒
+    val (dE, external) = seq.collect { case ((in, out), error) if in != null ⇒
       val diff = centers.value(::, *) - in
       val dist = norm.apply(diff, Axis._0).toDenseVector
       /*
-     * Error, i.e. dGdF is NOut-dim vector.
-     * act.derivative is NOut x NOut matrix.
-     * Actually, dFdX is NOut-dim square matrix. Since non-diag is zero,
-     * dFdX * dGdF can be implemented with elementwise computation.
-     * Thus dGdX = dFdX * dGdF, NOut-dim vector
-     */
+       * Error, i.e. dGdF is NOut-dim vector.
+       * act.derivative is NOut x NOut matrix.
+       * Actually, dFdX is NOut-dim square matrix. Since non-diag is zero,
+       * dFdX * dGdF can be implemented with elementwise computation.
+       * Thus dGdX = dFdX * dGdF, NOut-dim vector
+       */
       val dGdX: DataVec = act.derivative(out) :* error
 
       /*
-     * dX_i/dE_i = 2 * e_i * ||x - C_i||^2, otherwise 0.
-     * Then dGdE = dXdE * dGdX is NOut-dim vector.
-     * Simplified version will be, elementwise multiplication between diag(dXdE) and dGdX
-     */
+       * dX_i/dE_i = 2 * e_i * ||x - C_i||^2, otherwise 0.
+       * Then dGdE = dXdE * dGdX is NOut-dim vector.
+       * Simplified version will be, elementwise multiplication between diag(dXdE) and dGdX
+       */
       val dXdE = 2.0 * (epsilon.value :* pow(dist, 2.0))
       val dGdE = dXdE :* dGdX
 
       /*
-     * dX_i/dC_i = 2 * e_i^2 * (x - C_i), otherwise 0 vector.
-     * dX/dC_i became all zero except i-th column is dX_i/dC_i.
-     * Therefore, while computing dGdC,
-     * dG/dC_i = dGdX * dXdC_i = dGdX(i) * dXdC_i.
-     */
+       * dX_i/dC_i = 2 * e_i^2 * (x - C_i), otherwise 0 vector.
+       * dX/dC_i became all zero except i-th column is dX_i/dC_i.
+       * Therefore, while computing dGdC,
+       * dG/dC_i = dGdX * dXdC_i = dGdX(i) * dXdC_i.
+       */
       val factor = 2.0 * (pow(epsilon.value, 2.0) :* dGdX)
       val dGdC = diff(*, ::) :* factor
 
       /*
-     * Note that, dX_i/dC_i = - dX_i/dx, and
-     * dX/dx = - \sum dX_i/dC_i.
-     */
+       * Note that, dX_i/dC_i = - dX_i/dx, and
+       * dX/dx = - \sum dX_i/dC_i.
+       */
       val dGdx = sum(dGdC, Axis._1)
-      (dGdE, dGdC, dGdx)
-    }.unzip3
+      (dGdE, dGdx)
+    }.unzip
 
     epsilon update dE
-    centers update dC
 
     external.seq
   }

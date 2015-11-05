@@ -2,7 +2,7 @@ package com.github.nearbydelta.deepspark.word.layer
 
 import breeze.linalg.DenseVector
 import com.github.nearbydelta.deepspark.data._
-import com.github.nearbydelta.deepspark.word.LedgerModel
+import com.github.nearbydelta.deepspark.word.{LedgerBuilder, LedgerModel}
 
 import scala.collection.parallel.ParSeq
 
@@ -36,11 +36,13 @@ class AverageLedger extends Ledger[DataVec] {
         updateWord(padID, err)
     }
 
+    algorithm.update()
+
     null
   }
 
-  override def withModel(model: LedgerModel): this.type = {
+  override def withModel(model: LedgerModel, builder: LedgerBuilder): this.type = {
     NOut = model.dimension
-    super.withModel(model)
+    super.withModel(model, builder)
   }
 }

@@ -149,11 +149,14 @@ private class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
     val output = network.forward(input).seq
 
     val error = trainSample.map(_._2).zip(output).map {
-      case (exp, out) ⇒ objective.derivative(exp, out)
+      case (exp, out) ⇒
+        val err = objective.derivative(exp, out)
+        require(err.data.count(x ⇒ x.isNaN || x.isInfinity) == 0,
+          s"Please check your objective function. Derivative has NaN/Infinity! (Expected: $exp, Network: $out)")
+        err
     }
 
     network.backward(error)
-    network.update(trainSample.size)
 
     val maxEpoch = getMaxEpoch(epoch, patience)
     if (maxEpoch > 0)
@@ -161,6 +164,7 @@ private class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
   }
 
   override protected def getValidationErr: Double = {
+    network.broadcast(trainSet.context)
     val loss = testSet.context.accumulator(0.0)
     val count = testSet.context.accumulator(0)
     val nanCount = testSet.context.accumulator(0)
@@ -185,6 +189,7 @@ private class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
         loss += sum
         count += cnt
     }
+    network.unbroadcast()
 
     if (nanCount.value > 0)
       logger warn s"There was ${nanCount.value} NaN/Infinity value during Evaluation Process!"
@@ -231,11 +236,14 @@ private class FlexibleTrainer[IN, OUT](var network: Network[IN, OUT],
     val output = network.forward(input).seq
 
     val error = trainSample.map(_._2).zip(output).map {
-      case (exp, out) ⇒ objective.derivative(expectConverter(exp), out)
+      case (exp, out) ⇒
+        val err = objective.derivative(expectConverter(exp), out)
+        require(err.data.count(x ⇒ x.isNaN || x.isInfinity) == 0,
+          s"Please check your objective function. Derivative has NaN/Infinity! (Expected: $exp, Network: $out)")
+        err
     }
 
     network.backward(error)
-    network.update(trainSample.size)
 
     val maxEpoch = getMaxEpoch(epoch, patience)
     if (maxEpoch > 0)
@@ -243,6 +251,7 @@ private class FlexibleTrainer[IN, OUT](var network: Network[IN, OUT],
   }
 
   override protected def getValidationErr: Double = {
+    network.broadcast(trainSet.context)
     val loss = testSet.context.accumulator(0.0)
     val count = testSet.context.accumulator(0)
     val nanCount = testSet.context.accumulator(0)
@@ -267,6 +276,7 @@ private class FlexibleTrainer[IN, OUT](var network: Network[IN, OUT],
         loss += sum
         count += cnt
     }
+    network.unbroadcast()
 
     if (nanCount.value > 0)
       logger warn s"There was ${nanCount.value} NaN/Infinity value during Evaluation Process!"

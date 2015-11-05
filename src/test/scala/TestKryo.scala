@@ -11,9 +11,9 @@ object TestKryo {
   def main(args: Array[String]) {
     val builder = new AdaGrad(l2decay = 1e-6, rate = 0.01)
     val network = new SimpleNetwork[Boolean]()
-      .initiateBy(builder)
       .add(new BasicLayer withInput 2 withOutput 4)
       .add(new BasicLayer withOutput 1)
+      .initiateBy(builder)
 
     require(network.NOut == 1)
 

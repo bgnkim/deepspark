@@ -71,6 +71,9 @@ object KryoWrap {
     kryo.register(classOf[LedgerAdaDelta])
     kryo.register(classOf[LedgerAdaGrad])
     kryo.register(classOf[LedgerSGD])
+
+    kryo.register(SoftmaxCEE.getClass)
+    kryo.register(classOf[FixedAverageLedger])
   }
 }
 

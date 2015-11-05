@@ -68,7 +68,7 @@ class LinearTransformLayer extends TransformLayer {
       (dGdW, dGdx)
     }.unzip
 
-    weight updateBy dW.reduce(_ += _)
+    weight update dW
 
     external.seq
   }
@@ -88,10 +88,6 @@ class LinearTransformLayer extends TransformLayer {
     act = kryo.readClassAndObject(input).asInstanceOf[Activation]
     weight.read(kryo, input)
     super.read(kryo, input)
-  }
-
-  override def update(count: Int): Unit = {
-    weight.update(count)
   }
 
   override def write(kryo: Kryo, output: Output): Unit = {

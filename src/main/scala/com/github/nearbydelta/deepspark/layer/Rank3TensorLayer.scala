@@ -96,9 +96,6 @@ abstract class Rank3TensorLayer extends TransformLayer {
      */
       val dGdX: DataVec = dFdX * error
 
-      // For bias, input is always 1. We only need dG/dX
-      bias updateBy dGdX
-
       /*
      * Chain Rule (Linear weight case) : dG/dW_ij = tr[ ( dG/dX ).t * dX/dW_ij ].
      *
@@ -109,7 +106,7 @@ abstract class Rank3TensorLayer extends TransformLayer {
      * Therefore dG/dW = dG/dX * X.t
      */
       val dGdL = dGdX * in.t
-      linear updateBy dGdL
+
       /*
      * Chain Rule (Linear weight part) : dG/dx_ij = tr[ ( dG/dX ).t * dX/dx_ij ].
      *
@@ -163,15 +160,11 @@ abstract class Rank3TensorLayer extends TransformLayer {
     }.unzip
 
     val (dX, dL, dQ) = internal.unzip3
-    val dGdQ = dQ.reduce[IndexedSeq[Matrix]] {
-      case (q1, q2) ⇒
-        q1.zip(q2).map(x ⇒ x._1 += x._2)
-    }
 
-    bias updateBy dX.reduce(_ += _)
-    linear updateBy dL.reduce(_ += _)
+    bias update dX
+    linear update dL
     (0 until NOut).par.foreach { id ⇒
-      quadratic(id) updateBy dGdQ(id)
+      quadratic(id) update dQ(id)
     }
 
     external.seq
@@ -207,12 +200,6 @@ abstract class Rank3TensorLayer extends TransformLayer {
       quadratic += weight
     }
     super.read(kryo, input)
-  }
-
-  override def update(count: Int): Unit = {
-    bias.update(count)
-    linear.update(count)
-    quadratic.foreach(_.update(count))
   }
 
   override def write(kryo: Kryo, output: Output): Unit = {

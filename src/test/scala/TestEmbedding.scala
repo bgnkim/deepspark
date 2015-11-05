@@ -81,11 +81,10 @@ object TestEmbedding {
 
 
       val wordlayer = new BasicLayer withInput 10 withOutput 5
-      val network = new GeneralNetwork[Array[Int], DataVec](new RNNLedger(wordlayer)
-        .withModel(embedding.copy).initiateBy(mb).initLayerBy(wb))
-        .initiateBy(wb)
+      val network = new GeneralNetwork[Array[Int], DataVec](new RNNLedger(wordlayer).withModel(embedding.copy, mb))
         .add(new BasicLayer withInput 5 withOutput 10)
-        .add(new BasicLayer withActivation Softmax withInput 10 withOutput 5)
+        .add(new BasicLayer withActivation SoftmaxCEE withInput 10 withOutput 5)
+        .initiateBy(wb)
 
       val trained = new TrainerBuilder(TrainingParam(miniBatch = 10, maxIter = 1000,
         reuseSaveData = true, storageLevel = StorageLevel.MEMORY_ONLY))

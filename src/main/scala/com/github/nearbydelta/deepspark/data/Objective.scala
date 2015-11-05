@@ -81,9 +81,10 @@ object CosineErr extends Objective {
 }
 
 /**
- * __Objective Function__: Sum of Cross-Entropy (Logistic)
+ * __Objective Function__: Sum of Cross-Entropy, Multi-Class (Logistic)
  *
- * @note This objective function prefer 0/1 output
+ * @note This objective function prefer 0/1 output.<br/>
+ *       This objective assumes [[SoftmaxCEE]] output layer.
  * @example
  * {{{val output = net(input)
  *            val err = CrossEntropyErr(real, output)
@@ -94,19 +95,29 @@ object CrossEntropyErr extends Objective {
   /**
    * Entropy function
    */
-  val entropy = (r: Double, o: Double) ⇒
-    (if (r != 0.0) -r * Math.log(o).toFloat else 0.0) + (if (r != 1.0) -(1.0 - r) * Math.log(1.0 - o).toFloat else 0.0)
+  def entropy(r: Double, o: Double) = if (r != 0.0) -Math.log(safe(o)) else 0.0
 
   /**
-   * Derivative of Entropy function
+   * Get log-safe number
+   * @param x Double value, converted to safe value
+   * @return value in safe-range
    */
-  val entropyDiff = (r: Double, o: Double) ⇒ (r - o) / (o * (o - 1.0))
+  private def safe(x: Double) =
+    if (x < Double.MinPositiveValue) Double.MinPositiveValue
+    else if (x > 1.0) 1.0
+    else x
 
   override def apply(real: DataVec, output: DataVec): Double =
-    sum(DenseVector.tabulate(real.length)(r ⇒ entropy(real(r), output(r))))
+    (0 until real.length).par.map(r ⇒ entropy(real(r), output(r))).sum
 
-  override def derivative(real: DataVec, output: DataVec): DataVec =
-    DenseVector.tabulate(real.length)(r ⇒ entropyDiff(real(r), output(r)))
+  /**
+   * @inheritdoc
+   * @note Assumes [[SoftmaxCEE]] output, and in that case,
+   *       -1/out will be canceled with Softmax derivation term out(delta_ij-out)in.
+   *       Hence, we designed softmax with derivation term (delta_ij-out)in, and
+   *       this derivation will output -1 only when real output is 1.
+   */
+  override def derivative(real: DataVec, output: DataVec): DataVec = -real
 }
 
 /**

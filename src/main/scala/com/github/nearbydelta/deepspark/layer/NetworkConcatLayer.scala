@@ -88,6 +88,11 @@ trait NetworkConcatLayer[X] extends InputLayer[Array[X], DataVec] {
     }
   }
 
+  override def initiateBy(builder: WeightBuilder): this.type = {
+    networks.foreach(_.initiateBy(builder))
+    this
+  }
+
   override def loss: Double = networks.map(_.loss).sum
 
   override def read(kryo: Kryo, input: Input): Unit = {
@@ -110,8 +115,6 @@ trait NetworkConcatLayer[X] extends InputLayer[Array[X], DataVec] {
   }
 
   override def unbroadcast(): Unit = networks.par.foreach(_.unbroadcast())
-
-  override def update(count: Int): Unit = networks.par.foreach(_.update(count))
 
   override def write(kryo: Kryo, output: Output): Unit = {
     output.writeInt(networks.size)

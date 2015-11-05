@@ -41,17 +41,14 @@ package object network {
 
     /**
      * Add new top layer.
-     * @note Use after weight builder is set by [[initiateBy()]]
      * @param layer Layer to be added on top of current stack.
      * @return self
      */
     final def add(layer: TransformLayer) = {
-      require(builder != null, "Set weight builder before add layer!")
       val prevout = NOut
       if (prevout != 0 && layer.NIn != prevout) {
         layer.withInput(prevout)
       }
-      layer.initiateBy(builder)
       layerSeq += layer
       this
     }
@@ -96,6 +93,7 @@ package object network {
      */
     def initiateBy(builder: WeightBuilder) = {
       this.builder = builder
+      layerSeq.foreach(_.initiateBy(builder))
       this
     }
 
@@ -152,12 +150,6 @@ package object network {
      * Unpersist resources of input layer.
      */
     def unbroadcast(): Unit = {}
-
-    /**
-     * Execute update algorithm
-     * @param count Count of mini-batch instances.
-     */
-    def update(count: Int): Unit = layerSeq.par.foreach(_.update(count))
 
     /**
      * Backpropagate errors

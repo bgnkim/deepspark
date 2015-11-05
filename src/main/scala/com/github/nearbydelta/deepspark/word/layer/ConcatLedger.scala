@@ -4,7 +4,7 @@ import breeze.linalg.DenseVector
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.data._
-import com.github.nearbydelta.deepspark.word.LedgerModel
+import com.github.nearbydelta.deepspark.word.{LedgerBuilder, LedgerModel}
 
 import scala.collection.parallel.ParSeq
 
@@ -62,6 +62,8 @@ class ConcatLedger(private var takeRight: Boolean = true)
       }
     }
 
+    algorithm.update()
+
     null
   }
 
@@ -73,13 +75,14 @@ class ConcatLedger(private var takeRight: Boolean = true)
     dimension = model.dimension
   }
 
-  override def withModel(model: LedgerModel): this.type = {
+  override def withModel(model: LedgerModel, builder: LedgerBuilder): this.type = {
+    require(model.padID != -1, "Concatenate Ledger Layer needs pad.")
     dimension = model.dimension
     if (words > 0) {
       NOut = words * dimension
     }
 
-    super.withModel(model)
+    super.withModel(model, builder)
   }
 
   override def write(kryo: Kryo, output: Output): Unit = {

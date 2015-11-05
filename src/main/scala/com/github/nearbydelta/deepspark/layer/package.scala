@@ -53,6 +53,10 @@ package object layer {
 
     /**
      * Backward computation
+     * @note <p>
+     *       For the computation, we only used denominator layout. (cf. Wikipedia Page of Matrix Computation)
+     *       For the computation rules, see "Matrix Cookbook" from MIT.
+     *       </p>
      * @param seq Sequence of entries to be used for backward computation.
      * @return Error sequence, to backpropagate into previous layer.
      */
@@ -88,8 +92,12 @@ package object layer {
       val seq = in.map(x ⇒ (x, apply(x)))
       val output = seq.map { x ⇒
         val vec = outVecOf(x._2)
-        require(vec.data.count(x ⇒ x.isNaN || x.isInfinity) == 0,
-          s"${this.getClass}, $NIn -> $NOut has NaN/Infinity! (IN: ${x._1})")
+        if (vec != null) {
+          val nan = vec.data.count(_.isNaN)
+          val inf = vec.data.count(_.isInfinity)
+          require(nan + inf == 0,
+            s"${this.getClass}, $NIn -> $NOut has $nan NaN & $inf Infinity!")
+        }
         vec
       }
 
@@ -98,6 +106,13 @@ package object layer {
 
       output
     }
+
+    /**
+     * Set weight builder for this layer.
+     * @param builder Weight builder to be applied
+     * @return self
+     */
+    def initiateBy(builder: WeightBuilder): this.type = this
 
     /**
      * Weight Loss of this layer
@@ -112,12 +127,6 @@ package object layer {
     def setUpdatable(bool: Boolean): Unit = {
       this.isUpdatable = bool
     }
-
-    /**
-     * Execute update procedure of this layer.
-     * @param count Size of minibatch
-     */
-    def update(count: Int): Unit
 
     /**
      * Set input size
@@ -156,13 +165,6 @@ package object layer {
   trait TransformLayer extends Layer[DataVec, DataVec] {
     override final val outVecOf = (x: DataVec) ⇒ x
     @transient implicit override protected val evidenceI: ClassTag[DataVec] = classTag[DataVec]
-
-    /**
-     * Set weight builder for this layer.
-     * @param builder Weight builder to be applied
-     * @return self
-     */
-    def initiateBy(builder: WeightBuilder): this.type
   }
 
   /**

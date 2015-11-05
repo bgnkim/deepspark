@@ -66,16 +66,16 @@ class LedgerWords extends Serializable with KryoSerializable {
 class LedgerModel extends Serializable with KryoSerializable {
   /** Dimension of vector */
   lazy final val dimension = vectors.head.size
-  /** ID of pad */
-  lazy final val padID = wordmap.padID
   /** size of model */
-  lazy final val size = wordmap.size
+  lazy final val size = map.size
   /** ID of Unknown */
-  lazy final val unkID = wordmap.unkID
+  lazy final val unkID = map.unkID
   /** list of vector */
   val vectors = mutable.ArrayBuffer[DataVec]()
   /** map of words, ledger words. */
-  var wordmap = new LedgerWords()
+  var map = new LedgerWords()
+  /** ID of pad. -1 if not using pad. */
+  var padID = -1
 
   /**
    * Find vector of given string.
@@ -91,7 +91,7 @@ class LedgerModel extends Serializable with KryoSerializable {
    * @return new ledger model.
    */
   def copy: LedgerModel = {
-    val model = new LedgerModel().set(this.wordmap, this.vectors)
+    val model = new LedgerModel().set(this.map, this.vectors)
     model
   }
 
@@ -100,7 +100,7 @@ class LedgerModel extends Serializable with KryoSerializable {
    * @param str word
    * @return index
    */
-  def indexOf(str: String) = wordmap.indexOf(str: String)
+  def indexOf(str: String) = map.indexOf(str: String)
 
   /**
    * Save ledger model into text file
@@ -109,7 +109,7 @@ class LedgerModel extends Serializable with KryoSerializable {
   def saveAsTextFile(file: Path) =
     try {
       val bos = File(file).bufferedWriter()
-      wordmap.words.foreach {
+      map.words.foreach {
         case (word, id) ⇒
           val vec = vectors(id)
           bos.write(word + " " + vec.data.mkString(" ") + "\n")
@@ -139,7 +139,8 @@ class LedgerModel extends Serializable with KryoSerializable {
    * @return self
    */
   def set(map: LedgerWords, vec: mutable.ArrayBuffer[DataVec]): this.type = {
-    this.wordmap = map
+    this.map = map
+    padID = map.padID
     vectors ++= vec
     this
   }
@@ -152,23 +153,25 @@ class LedgerModel extends Serializable with KryoSerializable {
   def vectorAt(at: Int) = vectors(at)
 
   override def read(kryo: Kryo, input: Input): Unit = {
-    wordmap = kryo.readClassAndObject(input).asInstanceOf[LedgerWords]
+    map = kryo.readClassAndObject(input).asInstanceOf[LedgerWords]
     vectors.clear()
     val size = input.readInt()
     (0 until size).foreach { _ ⇒
       val vec = kryo.readClassAndObject(input).asInstanceOf[DataVec]
       vectors += vec
     }
+    padID = input.readInt()
   }
 
   // Please change word layer if change this.
   override def write(kryo: Kryo, output: Output): Unit = {
-    kryo.writeClassAndObject(output, wordmap)
+    kryo.writeClassAndObject(output, map)
     output.writeInt(vectors.size)
     vectors.foreach {
       case vec ⇒
         kryo.writeClassAndObject(output, vec)
     }
+    output.writeInt(padID)
   }
 }
 

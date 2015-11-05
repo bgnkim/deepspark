@@ -52,6 +52,12 @@ class GeneralNetwork[In, Out](var inputLayer: InputLayer[In, _]) extends Network
     forwardRDD(out)
   }
 
+  override def initiateBy(builder: WeightBuilder): this.type = {
+    inputLayer.initiateBy(builder)
+    super.initiateBy(builder)
+    this
+  }
+
   override def loss: Double = super.loss + inputLayer.loss
 
   override def read(kryo: Kryo, input: Input): Unit = {
@@ -67,11 +73,6 @@ class GeneralNetwork[In, Out](var inputLayer: InputLayer[In, _]) extends Network
   override def unbroadcast(): Unit = {
     inputLayer.unbroadcast()
     super.unbroadcast()
-  }
-
-  override def update(count: Int): Unit = {
-    super.update(count)
-    inputLayer.update(count)
   }
 
   override def write(kryo: Kryo, output: Output): Unit = {

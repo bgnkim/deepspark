@@ -71,8 +71,8 @@ class BasicLayer extends TransformLayer {
       (dGdX, dGdW, dGdx)
     }.unzip3
 
-    bias updateBy dX.reduce(_ += _)
-    weight updateBy dW.reduce(_ += _)
+    bias update dX
+    weight update dW
 
     external.seq
   }
@@ -94,11 +94,6 @@ class BasicLayer extends TransformLayer {
     weight.read(kryo, input)
     bias.read(kryo, input)
     super.read(kryo, input)
-  }
-
-  override def update(count: Int): Unit = {
-    weight.update(count)
-    bias.update(count)
   }
 
   override def write(kryo: Kryo, output: Output): Unit = {

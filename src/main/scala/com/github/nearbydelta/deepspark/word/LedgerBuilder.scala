@@ -4,10 +4,10 @@ import breeze.linalg._
 import breeze.numerics._
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, KryoSerializable}
-import com.github.nearbydelta.deepspark.data.DataVec
+import com.github.nearbydelta.deepspark.data.{DataVec, Weight}
 
 /**
- * __DataVecrait__ that describes the algorithm for weight update
+ * __Trait__ that describes the algorithm for weight update
  *
  * Because each weight update requires history, we recommend to make inherited one as a class. 
  */
@@ -28,7 +28,7 @@ trait LedgerAlgorithm {
   /**
    * Execute the algorithm for given __Δweight__ and __weights__
    */
-  def update(size: Int): Unit
+  def update(): Unit
 }
 
 
@@ -70,15 +70,15 @@ class LedgerAdaDelta(var l2decay: Double = 0.0001,
     private lazy val deltaSq = LedgerNoteZero() withDefault (_ ⇒ DenseVector.zeros[Double](dimension))
     private lazy val gradSq = LedgerNoteZero() withDefault (_ ⇒ DenseVector.zeros[Double](dimension))
 
-    override def loss = l2decay * super.loss
+    override def loss = l2decay * super.loss / 2.0
 
     /**
      * Execute the algorithm for given __Δ(weight)__ and __weights__
      */
-    override def update(size: Int): Unit = {
+    override def update(): Unit = {
       delta.foreach {
         case (id, dW) ⇒
-          dW :/= size.toDouble
+          Weight.check[Int, DataVec](dW)
           val vec = x(id)
 
           val l2: DataVec = (l2decay * 2) * vec
@@ -95,6 +95,7 @@ class LedgerAdaDelta(var l2decay: Double = 0.0001,
 
           val dw: DataVec = d :* rate
           vec -= dw
+          Weight.clearInvalid[Int, DataVec](vec)
 
           dSq *= historyDecay
           dSq += (1.0 - historyDecay) * (dw :* dw)
@@ -143,15 +144,15 @@ class LedgerAdaGrad(var rate: Double = 0.6,
     extends LedgerAlgorithm {
     private lazy val history = LedgerNoteZero() withDefault (_ ⇒ DenseVector.zeros[Double](dimension))
 
-    override def loss = l2decay * super.loss
+    override def loss = l2decay * super.loss / 2.0
 
     /**
      * Execute the algorithm for given __Δ(weight)__ and __weights__
      */
-    override def update(size: Int): Unit = {
+    override def update(): Unit = {
       delta.foreach {
         case (id, dW) ⇒
-          dW :/= size.toDouble
+          Weight.check[Int, DataVec](dW)
           val vec = x(id)
 
           val l2: DataVec = (l2decay * 2) * vec
@@ -165,6 +166,7 @@ class LedgerAdaGrad(var rate: Double = 0.6,
           val dw: DataVec = d :* arate
 
           vec -= dw
+          Weight.clearInvalid[Int, DataVec](vec)
         case _ ⇒
       }
       delta.clear()
@@ -210,15 +212,15 @@ class LedgerSGD(var rate: Double = 0.03,
     extends LedgerAlgorithm {
     @transient private lazy val history = LedgerNoteZero() withDefault (_ ⇒ DenseVector.zeros[Double](dimension))
 
-    override def loss = l2decay * super.loss
+    override def loss = l2decay * super.loss / 2.0
 
     /**
      * Execute the algorithm for given __Δ(weight)__ and __weights__
      */
-    override def update(size: Int): Unit = {
+    override def update(): Unit = {
       delta.foreach {
         case (id, dW) ⇒
-          dW :/= size.toDouble
+          Weight.check[Int, DataVec](dW)
           val vec = x(id)
 
           val l2: DataVec = (l2decay * 2) * vec
@@ -234,6 +236,7 @@ class LedgerSGD(var rate: Double = 0.03,
             }
 
           vec -= value
+          Weight.clearInvalid[Int, DataVec](vec)
         case _ ⇒
       }
       delta.clear()
