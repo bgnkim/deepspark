@@ -78,27 +78,31 @@ class LedgerAdaDelta(var l2decay: Double = 0.0001,
     override def update(): Unit = {
       delta.foreach {
         case (id, dW) ⇒
-          Weight.check[Int, DataVec](dW)
           val vec = x(id)
 
-          val l2: DataVec = (l2decay * 2) * vec
-          val d: DataVec = l2 + dW
+          axpy(l2decay, vec, dW)
+          Weight.check[Int, DataVec](dW)
+
           val gSq = gradSq(id)
           val dSq = deltaSq(id)
 
           gSq *= historyDecay
-          gSq += (1.0 - historyDecay) * (d :* d)
+          val decayD = dW :* dW
+          axpy(1.0 - historyDecay, decayD, gSq)
 
-          val r1: DataVec = sqrt(dSq + historyEpsilon)
-          val r2: DataVec = sqrt(gSq + historyEpsilon)
-          val rate: DataVec = r1 :/ r2
+          val dw = dSq.mapPairs {
+            case (i, ds) ⇒
+              val dsq = ds + historyEpsilon
+              val gsq = gSq(i) + historyEpsilon
+              dW(i) * sqrt(dsq / gsq)
+          }
 
-          val dw: DataVec = d :* rate
           vec -= dw
           Weight.clearInvalid[Int, DataVec](vec)
 
           dSq *= historyDecay
-          dSq += (1.0 - historyDecay) * (dw :* dw)
+          val decayDW = dw :* dw
+          axpy(1.0 - historyDecay, decayDW, dSq)
         case _ ⇒
       }
       delta.clear()
@@ -152,18 +156,19 @@ class LedgerAdaGrad(var rate: Double = 0.6,
     override def update(): Unit = {
       delta.foreach {
         case (id, dW) ⇒
-          Weight.check[Int, DataVec](dW)
           val vec = x(id)
 
-          val l2: DataVec = (l2decay * 2) * vec
-          val d: DataVec = l2 + dW
+          axpy(l2decay, vec, dW)
+          Weight.check[Int, DataVec](dW)
+
           val hW = history(id)
 
-          hW += (d :* d)
+          hW += (dW :* dW)
 
-          val sqHistory: DataVec = sqrt(hW) :+ fudgeFactor
-          val arate: DataVec = rate / sqHistory
-          val dw: DataVec = d :* arate
+          val dw = hW.mapPairs {
+            case (i, h) ⇒
+              dW(i) * rate / (sqrt(h) + fudgeFactor)
+          }
 
           vec -= dw
           Weight.clearInvalid[Int, DataVec](vec)
@@ -220,19 +225,19 @@ class LedgerSGD(var rate: Double = 0.03,
     override def update(): Unit = {
       delta.foreach {
         case (id, dW) ⇒
-          Weight.check[Int, DataVec](dW)
           val vec = x(id)
 
-          val l2: DataVec = (l2decay * 2) * vec
-          val d: DataVec = l2 + dW
+          axpy(l2decay, vec, dW)
+          Weight.check[Int, DataVec](dW)
+
           val value =
             if (momentum != 0.0) {
               val hW = history(id)
               hW *= momentum
-              hW -= d
+              hW -= dW
               hW
             } else {
-              d
+              dW
             }
 
           vec -= value

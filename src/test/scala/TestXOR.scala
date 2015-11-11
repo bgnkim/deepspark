@@ -33,7 +33,7 @@ object TestXOR {
     val test = train
 
     try {
-      Weight.scalingDownBy(1.0)
+      Weight.scalingDownBy(10.0)
       val builder = new AdaGrad(l2decay = 0.0, rate = 0.01)
       val rbf = new RBFLayer withActivation GaussianRBF withCenters Seq(DenseVector(1.0, 1.0), DenseVector(0.0, 0.0), DenseVector(1.0, 0.0), DenseVector(0.0, 1.0))
       val network = new SimpleNetwork[Boolean]()

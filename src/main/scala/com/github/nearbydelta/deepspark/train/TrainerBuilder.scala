@@ -60,7 +60,7 @@ class TrainerBuilder(val param: TrainingParam = TrainingParam()) {
                      testset: RDD[(IN, OUT)],
                      objective: Objective,
                      expectConverter: OUT ⇒ DataVec,
-                     name: String = "temp")
+                     name: String)
                     (implicit evidence$1: ClassTag[IN], evidence$2: ClassTag[OUT]): Network[IN, OUT] = {
     val train = trainset.mapValues(expectConverter).setName(name + " (TRAIN)").persist(param.storageLevel)
     val test = testset.mapValues(expectConverter).setName(name + " (EVAL)").persist(param.storageLevel)
@@ -82,7 +82,7 @@ class TrainerBuilder(val param: TrainingParam = TrainingParam()) {
                 trainset: RDD[(IN, DataVec)],
                 testset: RDD[(IN, DataVec)],
                 objective: Objective,
-                name: String = "temp")
+                name: String)
                (implicit evidence$1: ClassTag[IN]): Network[IN, DataVec] = {
     val train = trainset.setName(name + " (TRAIN)").persist(param.storageLevel)
     val test = testset.setName(name + " (EVAL)").persist(param.storageLevel)
@@ -108,7 +108,7 @@ class TrainerBuilder(val param: TrainingParam = TrainingParam()) {
                              testset: RDD[(IN, OUT)],
                              objective: Objective,
                              expectConverter: OUT ⇒ DataVec,
-                             name: String = "temp")
+                             name: String)
                             (implicit evidence$1: ClassTag[IN], evidence$2: ClassTag[OUT]): Network[IN, OUT] = {
     val train = trainset.setName(name + " (TRAIN)").persist(param.storageLevel)
     val test = testset.setName(name + " (EVAL)").persist(param.storageLevel)
@@ -146,9 +146,9 @@ private class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
     val trainSample = batchSampler.next()
 
     val input = trainSample.map(_._1).par
-    val output = network.forward(input).seq
+    val output = network.forward(input)
 
-    val error = trainSample.map(_._2).zip(output).map {
+    val error = trainSample.map(_._2).par.zip(output).map {
       case (exp, out) ⇒
         val err = objective.derivative(exp, out)
         require(err.data.count(x ⇒ x.isNaN || x.isInfinity) == 0,
@@ -163,7 +163,7 @@ private class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
       trainSmallBatch(epoch + 1, maxEpoch)
   }
 
-  override protected def getValidationErr: Double = {
+  override protected def getValidationErr: (Double, Double) = {
     network.broadcast(trainSet.context)
     val loss = testSet.context.accumulator(0.0)
     val count = testSet.context.accumulator(0)
@@ -194,11 +194,13 @@ private class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
     if (nanCount.value > 0)
       logger warn s"There was ${nanCount.value} NaN/Infinity value during Evaluation Process!"
 
+    val weight = network.loss
+
     if (count.value == 0) {
       logger warn "There's no regular instance inside evaluation set!"
-      Double.PositiveInfinity
+      (Double.PositiveInfinity, Double.PositiveInfinity)
     } else {
-      loss.value / count.value
+      (loss.value / count.value, weight / count.value)
     }
   }
 }
@@ -233,9 +235,9 @@ private class FlexibleTrainer[IN, OUT](var network: Network[IN, OUT],
     val trainSample = batchSampler.next()
 
     val input = trainSample.map(_._1).par
-    val output = network.forward(input).seq
+    val output = network.forward(input)
 
-    val error = trainSample.map(_._2).zip(output).map {
+    val error = trainSample.map(_._2).par.zip(output).map {
       case (exp, out) ⇒
         val err = objective.derivative(expectConverter(exp), out)
         require(err.data.count(x ⇒ x.isNaN || x.isInfinity) == 0,
@@ -250,7 +252,7 @@ private class FlexibleTrainer[IN, OUT](var network: Network[IN, OUT],
       trainSmallBatch(epoch + 1, maxEpoch)
   }
 
-  override protected def getValidationErr: Double = {
+  override protected def getValidationErr: (Double, Double) = {
     network.broadcast(trainSet.context)
     val loss = testSet.context.accumulator(0.0)
     val count = testSet.context.accumulator(0)
@@ -281,11 +283,13 @@ private class FlexibleTrainer[IN, OUT](var network: Network[IN, OUT],
     if (nanCount.value > 0)
       logger warn s"There was ${nanCount.value} NaN/Infinity value during Evaluation Process!"
 
+    val weight = network.loss
+
     if (count.value == 0) {
       logger warn "There's no regular instance inside evaluation set!"
-      Double.PositiveInfinity
+      (Double.PositiveInfinity, Double.PositiveInfinity)
     } else {
-      loss.value / count.value
+      (loss.value / count.value, weight / count.value)
     }
   }
 }

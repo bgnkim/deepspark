@@ -7,7 +7,7 @@ import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.layer.TransformLayer
 import com.github.nearbydelta.deepspark.word.{LedgerBuilder, LedgerModel}
 
-import scala.annotation.tailrec
+import scala.collection.mutable
 import scala.collection.parallel.ParSeq
 
 /**
@@ -15,50 +15,54 @@ import scala.collection.parallel.ParSeq
  *
  */
 class RNNLedger(var layer: TransformLayer)
-  extends Ledger[Array[DataVec]] {
-  override val outVecOf: (Array[DataVec]) ⇒ DataVec = _.head
+  extends Ledger[mutable.Stack[DataVec]] {
+  override val outVecOf: (mutable.Stack[DataVec]) ⇒ DataVec = _.top
   private var layerBuilder: WeightBuilder = _
 
   def this() = this(null)
 
-  @tailrec
-  final def update(error: DataVec, words: Array[Int], in: Array[DataVec]): Unit =
-    if (words.length == 1) {
-      updateWord(words.head, error)
-    } else if (words.length > 1) {
-      val curr = words.head
-      val o = in.head
-      val i1 = in.tail.head
-      val i2 = vectorOf(curr)
+  override def apply(x: Array[Int]): mutable.Stack[DataVec] = {
+    val seq = x.map(vectorOf).toIterator
+    if (seq.nonEmpty) {
+      val buffer = mutable.Stack[DataVec]()
+      buffer.push(seq.next())
+      while (seq.hasNext) {
+        val leftPhrases = buffer.top
+        val curr = seq.next()
+        val input = DenseVector.vertcat(leftPhrases, curr)
+        val traceResult = layer.forward(input)
+        buffer.push(input)
+        buffer.push(traceResult)
+      }
 
-      // Scaling Down Trick for layer (Pascanu et al., 2013)
-      val compoundErr = layer.backward(ParSeq((DenseVector.vertcat(i1, i2), o) → error)).head
-      val errorRight = compoundErr(NOut to -1)
-      val errorLeft = compoundErr(0 until NOut)
-
-      // Split error term
-      updateWord(curr, errorRight)
-      update(errorLeft, words.tail, in.tail)
-    }
-
-  override def apply(x: Array[Int]): Array[DataVec] = {
-    val seq = x.map(vectorOf)
-    if (seq.nonEmpty)
-      seq.tail.foldLeft(Seq(seq.head)) {
-        case (leftPhrases, curr) ⇒
-          val input = DenseVector.vertcat(leftPhrases.head, curr)
-          val traceResult = layer.forward(input)
-          traceResult +: leftPhrases
-      }.toArray
-    else
-      Array(pad)
+      buffer
+    } else
+      mutable.Stack(pad)
   }
 
-  override def backward(seq: ParSeq[((Array[Int], Array[DataVec]), DataVec)]): Seq[DataVec] = {
+  override def backprop(seq: ParSeq[((Array[Int], mutable.Stack[DataVec]), DataVec)]): ParSeq[DataVec] = {
     seq.foreach { case ((in, out), err) ⇒
-      if (in.nonEmpty)
-        update(err, in.reverse, out)
-      else
+      if (in.nonEmpty) {
+        val words = in.reverseIterator
+        var error = err
+
+        while (words.hasNext) {
+          val o = out.pop()
+          val curr = words.next()
+
+          if (out.nonEmpty) {
+            val i = out.pop()
+
+            val compoundErr = layer.backprop(ParSeq((i, o) → error)).head
+            val errorRight = compoundErr(NOut to -1)
+            error = compoundErr(0 until NOut)
+
+            updateWord(curr, errorRight)
+          } else {
+            updateWord(curr, error)
+          }
+        }
+      } else
         updateWord(padID, err)
     }
 

@@ -6,6 +6,7 @@ import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.word.{LedgerBuilder, LedgerModel}
 
+import scala.collection.mutable.ArrayBuffer
 import scala.collection.parallel.ParSeq
 
 /**
@@ -30,35 +31,44 @@ class ConcatLedger(private var takeRight: Boolean = true)
   }
 
   override def apply(x: Array[Int]): DataVec = {
-    val padded =
-      if (takeRight) {
-        val wordseq = x.takeRight(words).map(vectorOf)
-        Seq.fill(words - wordseq.length)(pad) ++ wordseq.toSeq
-      } else {
-        val wordseq = x.take(words).map(vectorOf)
-        wordseq.toSeq ++ Seq.fill(words - wordseq.length)(pad)
+    val buffer = ArrayBuffer[DataVec]()
+    if (takeRight) {
+      while (buffer.length + x.length < words) {
+        buffer += pad
       }
-    val matrixList = padded
-    DenseVector.vertcat(matrixList: _*)
+    }
+    val it = x.iterator
+    while (it.hasNext) {
+      buffer += vectorOf(it.next())
+    }
+    if (!takeRight) {
+      while (buffer.length < words) {
+        buffer += pad
+      }
+    }
+
+    DenseVector.vertcat(buffer: _*)
   }
 
-  override def backward(seq: ParSeq[((Array[Int], DataVec), DataVec)]): Seq[DataVec] = {
+  override def backprop(seq: ParSeq[((Array[Int], DataVec), DataVec)]): ParSeq[DataVec] = {
     seq.foreach { case ((in, _), err) ⇒
-      val padded =
-        if (takeRight) {
-          val wordseq = in.takeRight(words)
-          Seq.fill(words - wordseq.length)(padID) ++ wordseq.toSeq
-        } else {
-          val wordseq = in.take(words)
-          wordseq.toSeq ++ Seq.fill(words - wordseq.length)(padID)
+      var index = 0
+      if (takeRight) {
+        while (index + in.length < words) {
+          updateWord(padID, err(index * dimension until (index + 1) * dimension))
+          index += 1
         }
-
-      padded.zipWithIndex.par.foreach {
-        case (str, index) ⇒
-          val startAt = index * dimension
-          val endAt = startAt + dimension
-          val e = err(startAt until endAt)
-          updateWord(str, e)
+      }
+      val it = in.iterator
+      while (it.hasNext) {
+        updateWord(it.next(), err(index * dimension until (index + 1) * dimension))
+        index += 1
+      }
+      if (!takeRight) {
+        while (index < words) {
+          updateWord(padID, err(index * dimension until (index + 1) * dimension))
+          index += 1
+        }
       }
     }
 

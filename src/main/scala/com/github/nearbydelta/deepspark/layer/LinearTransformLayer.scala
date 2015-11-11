@@ -31,7 +31,7 @@ class LinearTransformLayer extends TransformLayer {
     act(wx)
   }
 
-  override def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
+  override def backprop(seq: ParSeq[((DataVec, DataVec), DataVec)]): ParSeq[DataVec] = {
     val (dW, external) = seq.map { case ((in, out), error) ⇒
       val dFdX = act.diffAtY(out)
       /*
@@ -70,7 +70,7 @@ class LinearTransformLayer extends TransformLayer {
 
     weight update dW
 
-    external.seq
+    external
   }
 
   override def initiateBy(builder: WeightBuilder): this.type = {

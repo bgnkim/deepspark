@@ -103,6 +103,8 @@ object TestEmbedding {
         require(sum(out - out2) == 0.0)
       }
 
+      println(newA)
+      println(vectorA)
       require(sum(newA - vectorA) != 0.0)
     } finally {
       sc.stop()

@@ -1,6 +1,7 @@
 package com.github.nearbydelta.deepspark
 
 import breeze.linalg.{DenseMatrix, DenseVector, norm}
+import com.github.fommil.netlib.BLAS.{getInstance ⇒ blas}
 
 /**
  * Package: deepspark.data
@@ -22,6 +23,30 @@ package object data {
   private final val UpperPattern = """(?U)\p{IsUppercase}+""".r
   /** Alias for Hard version of Inverse Quadratic RBF. **/
   val HardInverseQuadRBF = HardGaussianRBF
+
+  /**
+   * return aAx + by
+   * @param a Double, scalar
+   * @param A Matrix
+   * @param x DataVec
+   * @param b Double, scalar
+   * @param y DataVec
+   */
+  def aAxpby(a: Double, A: Matrix, x: DataVec, b: Double, y:DataVec) = {
+    val rv = y.copy
+
+    require(x.length == A.cols, s"Dimension mismatch! Matrix x ${A.cols} columns != Vector a ${x.length} rows.")
+    require(A.rows == y.length, s"Dimension mismatch! Matrix x ${A.rows} rows != Vector a ${y.length} rows.")
+
+    blas.dgemv(if(A.isTranspose) "T" else "N",
+      if(A.isTranspose) A.cols else A.rows, if(A.isTranspose) A.rows else A.cols,
+      a, A.data, A.offset, A.majorStride,
+      x.data, x.offset, x.stride,
+      b, rv.data, rv.offset, rv.stride)
+    rv
+  }
+
+  def matrixAxpy(A: Matrix, x: DataVec, y: DataVec) = aAxpby(1.0, A, x, 1.0, y)
 
   /**
    * Trait of Differentiable function over Vector.

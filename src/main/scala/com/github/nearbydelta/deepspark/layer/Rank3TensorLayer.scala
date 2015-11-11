@@ -1,9 +1,9 @@
 package com.github.nearbydelta.deepspark.layer
 
-import breeze.linalg.DenseVector
+import breeze.linalg._
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.{Input, Output}
-import com.github.nearbydelta.deepspark.data._
+import com.github.nearbydelta.deepspark.data.{Matrix, _}
 
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.parallel.ParSeq
@@ -68,8 +68,7 @@ abstract class Rank3TensorLayer extends TransformLayer {
     val inA = in1(x)
     val inB = in2(x)
 
-    val intermediate: DataVec = linear.value * x
-    intermediate += bias.value
+    val intermediate = matrixAxpy(linear.value, x, bias.value)
 
     val quads = quadratic.map { q ⇒
       val Qy: DataVec = q.value * inB
@@ -80,7 +79,7 @@ abstract class Rank3TensorLayer extends TransformLayer {
     act(intermediate)
   }
 
-  override def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
+  override def backprop(seq: ParSeq[((DataVec, DataVec), DataVec)]): ParSeq[DataVec] = {
     val (internal, external) = seq.map { case ((in, out), error) ⇒
       val inA = in1(in)
       val inB = in2(in)
@@ -167,7 +166,7 @@ abstract class Rank3TensorLayer extends TransformLayer {
       quadratic(id) update dQ(id)
     }
 
-    external.seq
+    external
   }
 
   override def initiateBy(builder: WeightBuilder): this.type = {

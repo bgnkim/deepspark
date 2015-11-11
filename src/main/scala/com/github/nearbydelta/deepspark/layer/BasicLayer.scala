@@ -29,12 +29,10 @@ class BasicLayer extends TransformLayer {
   }
 
   override def apply(x: DataVec): DataVec = {
-    val wx: DataVec = weight.value * x
-    val wxb: DataVec = wx + bias.value
-    act(wxb)
+    act(matrixAxpy(weight.value, x, bias.value))
   }
 
-  override def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
+  override def backprop(seq: ParSeq[((DataVec, DataVec), DataVec)]): ParSeq[DataVec] = {
     val (dX, dW, external) = seq.map { case ((in, out), error) ⇒
       val dFdX = act.diffAtY(out)
       /*
@@ -74,7 +72,7 @@ class BasicLayer extends TransformLayer {
     bias update dX
     weight update dW
 
-    external.seq
+    external
   }
 
   override def initiateBy(builder: WeightBuilder): this.type = {

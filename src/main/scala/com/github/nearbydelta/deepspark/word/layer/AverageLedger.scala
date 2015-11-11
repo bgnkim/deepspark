@@ -1,6 +1,6 @@
 package com.github.nearbydelta.deepspark.word.layer
 
-import breeze.linalg.DenseVector
+import breeze.linalg.{DenseVector, axpy}
 import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.word.{LedgerBuilder, LedgerModel}
 
@@ -15,22 +15,24 @@ class AverageLedger extends Ledger[DataVec] {
 
   override def apply(x: Array[Int]): DataVec = {
     if (x.nonEmpty) {
-      val matrix =
-        x.foldLeft(DenseVector.zeros[Double](NOut)) {
-          case (acc, str) ⇒ acc += vectorOf(str)
-        }
-      matrix :/= x.length.toDouble
+      val matrix = DenseVector.zeros[Double](NOut)
+      val it = x.toIterator
+      val factor = 1.0 / x.length
+      while (it.hasNext) {
+        axpy(factor, vectorOf(it.next()), matrix)
+      }
+      matrix
     } else
       pad
   }
 
-  override def backward(seq: ParSeq[((Array[Int], DataVec), DataVec)]): Seq[DataVec] = {
+  override def backprop(seq: ParSeq[((Array[Int], DataVec), DataVec)]): ParSeq[DataVec] = {
     seq.foreach { case ((in, _), err) ⇒
       if (in.nonEmpty) {
         err :/= in.length.toDouble
-
-        in.par.foreach { str ⇒
-          updateWord(str, err)
+        val it = in.iterator
+        while (it.hasNext) {
+          updateWord(it.next(), err)
         }
       } else
         updateWord(padID, err)

@@ -1,6 +1,6 @@
 package com.github.nearbydelta.deepspark.word.layer
 
-import breeze.linalg.DenseVector
+import breeze.linalg._
 import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.word.LedgerModel
 
@@ -15,16 +15,18 @@ class FixedAverageLedger extends FixedLedger[DataVec] {
 
   override def apply(x: Array[Int]): DataVec = {
     if (x.nonEmpty) {
-      val matrix =
-        x.foldLeft(DenseVector.zeros[Double](NOut)) {
-          case (acc, str) ⇒ acc += vectorOf(str)
-        }
-      matrix :/= x.length.toDouble
+      val matrix = DenseVector.zeros[Double](NOut)
+      val it = x.toIterator
+      val factor = 1.0 / x.length
+      while (it.hasNext) {
+        axpy(factor, vectorOf(it.next()), matrix)
+      }
+      matrix
     } else
       pad
   }
 
-  override def backward(seq: ParSeq[((Array[Int], DataVec), DataVec)]): Seq[DataVec] = null
+  override def backprop(seq: ParSeq[((Array[Int], DataVec), DataVec)]): ParSeq[DataVec] = null
 
   override def withModel(model: LedgerModel): this.type = {
     NOut = model.dimension

@@ -2,7 +2,7 @@ organization := "com.github.nearbydelta"
 
 name := "DeepSpark"
 
-version := "1.1.6"
+version := "1.1.9"
 
 scalaVersion := "2.10.6"
 

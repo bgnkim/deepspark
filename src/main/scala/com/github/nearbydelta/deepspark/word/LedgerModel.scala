@@ -15,7 +15,7 @@ import scala.reflect.io.{File, Path}
  */
 class LedgerWords extends Serializable with KryoSerializable {
   /** ID for pad */
-  lazy final val padID = words(LedgerModel.PAD)
+  lazy final val padID = words.getOrElse(LedgerModel.PAD, -1)
   /** Size of this layer */
   lazy final val size = words.size
   /** ID for Unknown */

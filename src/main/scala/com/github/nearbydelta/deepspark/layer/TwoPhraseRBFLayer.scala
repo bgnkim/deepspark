@@ -77,7 +77,7 @@ class TwoPhraseRBFLayer extends TransformLayer {
     } else
       DenseVector.zeros[Double](NOut)
 
-  override def backward(seq: ParSeq[((DataVec, DataVec), DataVec)]): Seq[DataVec] = {
+  override def backprop(seq: ParSeq[((DataVec, DataVec), DataVec)]): ParSeq[DataVec] = {
     val (dE, external) = seq.collect { case ((in, out), error) if in != null ⇒
       val diff = centers.value(::, *) - in
       val dist = norm.apply(diff, Axis._0).toDenseVector
@@ -91,33 +91,31 @@ class TwoPhraseRBFLayer extends TransformLayer {
       val dGdX: DataVec = act.derivative(out) :* error
 
       /*
+       * Note that, dX_i/dC_i = - dX_i/dx, and
+       * dX/dx = - \sum dX_i/dC_i.
+       */
+      val dGdx = DenseVector.zeros[Double](diff.rows)
+
+      /*
        * dX_i/dE_i = 2 * e_i * ||x - C_i||^2, otherwise 0.
        * Then dGdE = dXdE * dGdX is NOut-dim vector.
        * Simplified version will be, elementwise multiplication between diag(dXdE) and dGdX
        */
-      val dXdE = 2.0 * (epsilon.value :* pow(dist, 2.0))
-      val dGdE = dXdE :* dGdX
+      val dGdE = dist.mapPairs {
+        case (i, d) ⇒
+          val e = epsilon.value(i)
+          val common = 2.0 * e * dGdX(i)
+          val vec: DataVec = diff(::, i) :* (common * e)
+          dGdx += vec
+          common * d * d
+      }
 
-      /*
-       * dX_i/dC_i = 2 * e_i^2 * (x - C_i), otherwise 0 vector.
-       * dX/dC_i became all zero except i-th column is dX_i/dC_i.
-       * Therefore, while computing dGdC,
-       * dG/dC_i = dGdX * dXdC_i = dGdX(i) * dXdC_i.
-       */
-      val factor = 2.0 * (pow(epsilon.value, 2.0) :* dGdX)
-      val dGdC = diff(*, ::) :* factor
-
-      /*
-       * Note that, dX_i/dC_i = - dX_i/dx, and
-       * dX/dx = - \sum dX_i/dC_i.
-       */
-      val dGdx = sum(dGdC, Axis._1)
       (dGdE, dGdx)
     }.unzip
 
     epsilon update dE
 
-    external.seq
+    external
   }
 
   override def initiateBy(builder: WeightBuilder): this.type = {

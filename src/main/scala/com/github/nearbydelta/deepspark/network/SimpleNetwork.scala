@@ -10,7 +10,7 @@ import scala.collection.parallel.ParSeq
  * @tparam Out Type of output.
  */
 class SimpleNetwork[Out]() extends Network[DataVec, Out] {
-  override def backward(error: Seq[DataVec]): Unit = {
+  override def backward(error: ParSeq[DataVec]): Unit = {
     backwardSeq(error)
   }
 

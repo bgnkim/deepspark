@@ -3,8 +3,6 @@ package com.github.nearbydelta.deepspark.data
 import breeze.linalg._
 import breeze.numerics._
 
-import scala.annotation.tailrec
-
 /**
  * __Trait__ that describes an activation function for '''each layer'''
  *
@@ -35,29 +33,6 @@ trait Activation extends Differentiable {
  *            val diff = HardSigmoid.derivative(fx) }}}
  */
 object HardSigmoid extends Activation {
-  @tailrec
-  private def applyCoord(x: DataVec, res: DataVec, r: Int): DataVec =
-    if (r >= 0) {
-      val v = x(r)
-      // if (v < -2) res.update(r, c, 0.0f) [Already initailized as zero]
-      if (v > 2) res.update(r, 1.0)
-      else res.update(r, 0.25 * v + 0.5)
-
-      applyCoord(x, res, r - 1)
-    } else
-      res
-
-  @tailrec
-  private def derivCoord(fx: DataVec, res: Matrix, r: Int): Matrix =
-    if (r >= 0) {
-      val x = fx(r)
-      if (x > 0.0 && x < 1.0)
-        res.update(r, r, 0.25)
-      // else res.update((r, r), 0.0f) [Already initialized as zero]
-      derivCoord(fx, res, r - 1)
-    } else
-      res
-
   /**
    * Compute mapping for `x`
    *
@@ -66,14 +41,31 @@ object HardSigmoid extends Activation {
    */
   override def apply(x: DataVec): DataVec = {
     val res = DenseVector.zeros[Double](x.length)
-    applyCoord(x, res, x.length - 1)
+    var i = x.length - 1
+    while(i >= 0){
+      val v = x(i)
+      // if (v < -2) res.update(r, c, 0.0f) [Already initailized as zero]
+      if (v > 2) res.update(i, 1.0)
+      else res.update(i, 0.25 * v + 0.5)
+
+      i -= 1
+    }
+    res
   }
 
   override def derivative(fx: DataVec): Matrix = {
     // Because fx is n by 1 matrix, generate n by n matrix
     val res = DenseMatrix.zeros[Double](fx.length, fx.length)
     // Output is diagonal matrix, with dfi(xi)/dxi.
-    derivCoord(fx, res, fx.length - 1)
+    var i = fx.length - 1
+    while(i >= 0){
+      val x = fx(i)
+      if (x > 0.0 && x < 1.0)
+        res.update(i, i, 0.25)
+
+      i -= 1
+    }
+    res
   }
 }
 
@@ -87,28 +79,6 @@ object HardSigmoid extends Activation {
  *            val diff = HardTanh.derivative(fx) }}}
  */
 object HardTanh extends Activation {
-  @tailrec
-  private def applyCoord(x: DataVec, res: DataVec, r: Int): DataVec =
-    if (r >= 0) {
-      val v = x(r)
-      if (v < -1) res.update(r, -1.0)
-      else if (v > 1) res.update(r, 1.0)
-
-      applyCoord(x, res, r - 1)
-    } else
-      res
-
-  @tailrec
-  private def derivCoord(fx: DataVec, res: Matrix, r: Int): Matrix =
-    if (r >= 0) {
-      val x = fx(r)
-      if (x < 1.0 && x > -1.0)
-        res.update(r, r, 1.0)
-      // else res.update(r, r, 0.0f) [Already initalized as zero]
-      derivCoord(fx, res, r - 1)
-    } else
-      res
-
   /**
    * Compute mapping for `x`
    *
@@ -117,14 +87,30 @@ object HardTanh extends Activation {
    */
   override def apply(x: DataVec): DataVec = {
     val res = x.copy
-    applyCoord(x, res, x.length - 1)
+    var i = x.length - 1
+    while(i >= 0){
+      val v = x(i)
+      if (v < -1) res.update(i, -1.0)
+      else if (v > 1) res.update(i, 1.0)
+
+      i -= 1
+    }
+    res
   }
 
   override def derivative(fx: DataVec): Matrix = {
     // Because fx is n by 1 matrix, generate n by n matrix
     val res = DenseMatrix.zeros[Double](fx.length, fx.length)
     // Output is diagonal matrix, with dfi(xi)/dxi.
-    derivCoord(fx, res, fx.length - 1)
+    var i = fx.length - 1
+    while(i >= 0){
+      val x = fx(i)
+      if (x < 1.0 && x > -1.0)
+        res.update(i, i, 1.0)
+
+      i -= 1
+    }
+    res
   }
 }
 
@@ -148,8 +134,15 @@ object HyperbolicTangent extends Activation {
 
   override def derivative(fx: DataVec): Matrix = {
     // Output is diagonal matrix, with dfi(xi)/dxi.
-    val dVec: DataVec = 1.0 - (fx :* fx)
-    diag(dVec)
+    // i.e. 1 - fx^2.
+    val res = DenseMatrix.zeros[Double](fx.length, fx.length)
+    var i = fx.length - 1
+    while(i >= 0){
+      val f = fx(i)
+      res.update(i, i, 1.0 - f * f)
+      i -= 1
+    }
+    res
   }
 }
 
@@ -184,25 +177,6 @@ object Linear extends Activation {
  *           val diff = Rectifier.derivative(fx)}}}
  */
 object Rectifier extends Activation {
-  @tailrec
-  private def applyCoord(x: DataVec, res: DataVec, r: Int): DataVec =
-    if (r >= 0) {
-      if (x(r) < 0) res.update(r, 0.0)
-      applyCoord(x, res, r - 1)
-    } else
-      res
-
-  @tailrec
-  private def derivCoord(fx: DataVec, res: Matrix, r: Int): Matrix =
-    if (r >= 0) {
-      val x = fx(r)
-      if (x > 0)
-        res.update(r, r, 1.0)
-      //else res.update(r, r, 0.0f) [Already Initialized as zero]
-      derivCoord(fx, res, r - 1)
-    } else
-      res
-
   /**
    * Compute mapping for `x`
    *
@@ -211,14 +185,29 @@ object Rectifier extends Activation {
    */
   override def apply(x: DataVec): DataVec = {
     val res = x.copy
-    applyCoord(x, res, x.length - 1)
+    var i = x.length - 1
+    while(i >= 0){
+      val v = x(i)
+      if (v < 0) res.update(i, 0.0)
+
+      i -= 1
+    }
+    res
   }
 
   override def derivative(fx: DataVec): Matrix = {
     // Because fx is n by 1 matrix, generate n by n matrix
     val res = DenseMatrix.zeros[Double](fx.length, fx.length)
     // Output is diagonal matrix, with dfi(xi)/dxi.
-    derivCoord(fx, res, fx.length - 1)
+    var i = fx.length - 1
+    while(i >= 0){
+      val x = fx(i)
+      if (x > 0)
+        res.update(i, i, 1.0)
+
+      i -= 1
+    }
+    res
   }
 }
 
@@ -233,25 +222,6 @@ object Rectifier extends Activation {
  *           val diff = LeakyReLU.derivative(fx)}}}
  */
 object LeakyReLU extends Activation {
-  @tailrec
-  private def applyCoord(x: DataVec, res: DataVec, r: Int): DataVec =
-    if (r >= 0) {
-      if (x(r) < 0) res(r) *= 0.01
-      applyCoord(x, res, r - 1)
-    } else
-      res
-
-  @tailrec
-  private def derivCoord(fx: DataVec, res: Matrix, r: Int): Matrix =
-    if (r >= 0) {
-      val x = fx(r)
-      if (x < 0)
-        res.update(r, r, 0.01)
-      //else res.update(r, r, 0.0f) [Already Initialized as zero]
-      derivCoord(fx, res, r - 1)
-    } else
-      res
-
   /**
    * Compute mapping for `x`
    *
@@ -260,14 +230,29 @@ object LeakyReLU extends Activation {
    */
   override def apply(x: DataVec): DataVec = {
     val res = x.copy
-    applyCoord(x, res, x.length - 1)
+    var i = x.length - 1
+    while(i >= 0){
+      val v = x(i)
+      if (v < 0) res.update(i, 0.01 * v)
+
+      i -= 1
+    }
+    res
   }
 
   override def derivative(fx: DataVec): Matrix = {
     // Because fx is n by 1 matrix, generate n by n matrix
-    val res = DenseMatrix.ones[Double](fx.length, fx.length)
+    val res = DenseMatrix.eye[Double](fx.length)
     // Output is diagonal matrix, with dfi(xi)/dxi.
-    derivCoord(fx, res, fx.length - 1)
+    var i = fx.length - 1
+    while(i >= 0){
+      val x = fx(i)
+      if (x < 0)
+        res.update(i, i, 0.01)
+
+      i -= 1
+    }
+    res
   }
 }
 
@@ -287,16 +272,18 @@ object Sigmoid extends Activation {
    * @param x the __input__ matrix. ''Before application, input should be summed already.''
    * @return value of `f(x)`
    */
-  override def apply(x: DataVec): DataVec = {
-    val expv: DataVec = exp(-x)
-    val exp1: DataVec = expv :+ 1.0
-    1.0 / exp1
-  }
+  override def apply(x: DataVec): DataVec = x.mapValues(d ⇒ 1.0 / (exp(-d) + 1.0))
 
   override def derivative(fx: DataVec): Matrix = {
     // Output is diagonal matrix, with dfi(xi)/dxi.
-    val dVec: DataVec = (1.0 - fx) :* fx
-    diag(dVec)
+    val res = DenseMatrix.zeros[Double](fx.length, fx.length)
+    var i = fx.length - 1
+    while(i >= 0){
+      val f = fx(i)
+      res.update(i, i, (1.0 - f) * f)
+      i -= 1
+    }
+    res
   }
 
   /**
@@ -331,8 +318,12 @@ object Softmax extends Activation {
   override def apply(x: DataVec): DataVec = {
     // exp(x_k) / sum(exp(x_i)) is the same for exp(x_k - max(x)) / sum(exp(x_i - max(x)))
     val maxV: Double = max(x)
-    val expv: DataVec = exp(x :- maxV)
-    val normalize: Double = sum(expv)
+    var normalize = 0.0
+    val expv: DataVec = x.mapValues{d ⇒
+      val r = exp(d - maxV)
+      normalize += r
+      r
+    }
     expv :/= normalize
   }
 
@@ -375,8 +366,12 @@ object SoftmaxCEE extends Activation {
   override def apply(x: DataVec): DataVec = {
     // exp(x_k) / sum(exp(x_i)) is the same for exp(x_k - max(x)) / sum(exp(x_i - max(x)))
     val maxV: Double = max(x)
-    val expv: DataVec = exp(x :- maxV)
-    val normalize: Double = sum(expv)
+    var normalize = 0.0
+    val expv: DataVec = x.mapValues{d ⇒
+      val r = exp(d - maxV)
+      normalize += r
+      r
+    }
     expv :/= normalize
   }
 
@@ -420,16 +415,17 @@ object Softplus extends Activation {
    * @param x the __input__ matrix. ''Before application, input should be summed already.''
    * @return value of `f(x)`
    */
-  override def apply(x: DataVec): DataVec = {
-    val expx: DataVec = exp(x)
-    log1p(expx)
-  }
+  override def apply(x: DataVec): DataVec = x.mapValues(d ⇒ log1p(exp(d)))
 
   override def derivative(fx: DataVec): Matrix = {
     // Output is diagonal matrix, with dfi(xi)/dxi.
-    val expv: DataVec = expm1(fx)
-    val exp1: DataVec = expv - 1.0
-    val dVec: DataVec = exp1 / expv
-    diag(dVec)
+    val res = DenseMatrix.zeros[Double](fx.length, fx.length)
+    var i = fx.length - 1
+    while(i >= 0){
+      val f = exp(fx(i))
+      res.update(i, i, f / (f - 1.0))
+      i -= 1
+    }
+    res
   }
 }

@@ -27,7 +27,7 @@ class GeneralNetwork[In, Out](var inputLayer: InputLayer[In, _]) extends Network
       case None ⇒ 0
     }
 
-  override def backward(error: Seq[DataVec]): Unit = {
+  override def backward(error: ParSeq[DataVec]): Unit = {
     inputLayer backward backwardSeq(error)
   }
 

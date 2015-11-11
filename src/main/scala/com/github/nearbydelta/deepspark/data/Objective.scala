@@ -93,11 +93,6 @@ object CosineErr extends Objective {
  */
 object CrossEntropyErr extends Objective {
   /**
-   * Entropy function
-   */
-  def entropy(r: Double, o: Double) = if (r != 0.0) -Math.log(safe(o)) else 0.0
-
-  /**
    * Get log-safe number
    * @param x Double value, converted to safe value
    * @return value in safe-range
@@ -107,8 +102,15 @@ object CrossEntropyErr extends Objective {
     else if (x > 1.0) 1.0
     else x
 
-  override def apply(real: DataVec, output: DataVec): Double =
-    (0 until real.length).par.map(r ⇒ entropy(real(r), output(r))).sum
+  override def apply(real: DataVec, output: DataVec): Double = {
+    var sum = 0.0
+    real.foreachPair{
+      case (i, 1.0) ⇒
+        sum += -Math.log(safe(output(i)))
+      case _ ⇒
+    }
+    sum
+  }
 
   /**
    * @inheritdoc

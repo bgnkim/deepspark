@@ -1,5 +1,6 @@
 package com.github.nearbydelta.deepspark.word.layer
 
+import breeze.linalg.DenseVector
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.data._
@@ -8,6 +9,7 @@ import com.github.nearbydelta.deepspark.word._
 import org.apache.spark.SparkContext
 import org.apache.spark.broadcast.Broadcast
 
+import scala.collection.mutable
 import scala.reflect.{ClassTag, classTag}
 
 /**
@@ -27,7 +29,8 @@ trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
     this.model = model
     this.builder = builder
     this.padID = model.padID
-    delta = LedgerNoteZero()
+    delta = new mutable.HashMap[Int, DataVec]() with mutable.SynchronizedMap[Int, DataVec]
+      .withDefault(_ ⇒ DenseVector.zeros[Double](model.dimension))
     algorithm = builder.getUpdater(this.model.vectors, delta)
     this
   }
@@ -39,13 +42,7 @@ trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
 
   protected def updateWord(word: Int, dx: DataVec): Unit =
     if (word != -1) {
-      delta.synchronized {
-        delta.get(word) match {
-          case Some(x) ⇒ x += dx
-          case None ⇒
-            delta(word) = dx.copy
-        }
-      }
+      delta(word) += dx
     }
 
   protected def vectorOf(str: Int) =

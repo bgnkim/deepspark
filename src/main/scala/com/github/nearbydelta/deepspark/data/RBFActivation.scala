@@ -31,10 +31,7 @@ object GaussianRBF extends RBFActivation {
  * @note This function assumes get squared input. i.e. this is 1 / (1 + x), and gets r^2^ as input x.
  */
 object InverseQuadRBF extends RBFActivation {
-  override def apply(xSq: DataVec): DataVec = {
-    val sq1: DataVec = xSq :+ 1.0
-    1.0 / sq1
-  }
+  override def apply(xSq: DataVec): DataVec = xSq.mapValues(d ⇒ 1.0 / (d + 1.0))
 
   override def derivative(fx: DataVec): DataVec = -pow(fx, 2.0)
 }
@@ -45,10 +42,7 @@ object InverseQuadRBF extends RBFActivation {
  * @note This function assumes get squared input. i.e. this is 1 - x, and gets r^2^ as input x.
  */
 object HardGaussianRBF extends RBFActivation {
-  override def apply(xSq: DataVec): DataVec = {
-    xSq.mapValues(x ⇒ if (x > 1.0) 0.0 else 1.0 - x)
-  }
+  override def apply(xSq: DataVec): DataVec = xSq.mapValues(x ⇒ if (x > 1.0) 0.0 else 1.0 - x)
 
-  override def derivative(fx: DataVec): DataVec =
-    fx.mapValues(x ⇒ if (x > 0) -1.0 else 0.0)
+  override def derivative(fx: DataVec): DataVec = fx.mapValues(x ⇒ if (x > 0) -1.0 else 0.0)
 }

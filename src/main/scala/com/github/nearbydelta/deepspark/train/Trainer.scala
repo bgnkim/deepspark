@@ -8,6 +8,7 @@ import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.network.Network
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.rdd.RDD
+import org.apache.spark.util.SizeEstimator
 
 import scala.concurrent._
 import scala.concurrent.duration._
@@ -54,12 +55,12 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
   @transient protected val trainSet: RDD[(IN, EXP)]
   /** Evaluation set */
   @transient protected val testSet: RDD[(IN, EXP)]
-  /** Sampling fraction per minibatch */
-  @transient private val sampleFraction: Double = param.miniBatch.toDouble / trainSet.count()
   /** Time of begin */
   @transient private val startAt = System.currentTimeMillis()
+  /** Sampling fraction per minibatch */
+  @transient private val trainSize: Long = trainSet.count()
   /** Period of validation */
-  @transient private val validationPeriod: Int = (param.validationFreq / sampleFraction).toInt
+  @transient private val validationPeriod: Int = (param.validationFreq * trainSize / param.miniBatch).toInt
   /** Network */
   var network: Network[IN, OUT]
   /** Best Loss Iteration Number */
@@ -88,10 +89,12 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
         logger info f"We detected a network saved at $bestIter%4d Iteration." +
           f"with loss $prevLossE%8.5f + $prevLossW%8.5f. We use it as initial value."
       } else {
-        prevLossE = getValidationErr
-        prevLossW = network.loss
+        val (e, w) = getValidationErr
+        prevLossE = e
+        prevLossW = w
         saveStatus()
       }
+      print("\n\n")
       network.setUpdatable(true)
 
       val epoch = bestIter * validationPeriod
@@ -100,6 +103,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
       trainSmallBatch(epoch, patience)
       loadStatus()
       network.setUpdatable(false)
+      file.deleteIfExists()
 
       rootLogger.setLevel(lv)
       network
@@ -121,8 +125,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
     var prevloss = prevLossW + prevLossE
 
     if ((epoch + 1) % validationPeriod == 0) {
-      val train = getValidationErr
-      val weight = network.loss
+      val (train, weight) = getValidationErr
       val loss = train + weight
 
       if (loss.isNaN || loss.isInfinity) {
@@ -169,7 +172,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
    * Calculate validation error of evaluation set
    * @return Evaluation loss
    */
-  protected def getValidationErr: Double
+  protected def getValidationErr: (Double, Double)
 
   /**
    * Train single small batch
@@ -256,27 +259,36 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
    */
   class RDDSampler extends Iterator[Seq[(IN, EXP)]] {
     /** Size of sample */
-    val sampleSize = (100000 / param.miniBatch) * sampleFraction
-    /** Current temporary set */
-    var temp = trainSet.sample(withReplacement = true, fraction = sampleSize)
-      .collect().toIterator.sliding(param.miniBatch, param.miniBatch)
-    /** Future object to sampling */
-    var tempF: Future[Seq[(IN, EXP)]] = attachNext()
+    val sampleSize = {
+      val logger = Logger.getLogger(this.getClass)
+      val sample = trainSet.takeSample(withReplacement = false, num = 10)
+      val sizeByte = SizeEstimator.estimate(sample) / 10
+      logger info s"Estimated training instance's size is $sizeByte byte(s)."
 
-    /**
-     * Get next sampler
-     * @return Future object of sampler
-     */
-    def attachNext() =
-      trainSet.sample(withReplacement = true, fraction = sampleSize).collectAsync()
+      val available = trainSet.context.getConf.get("spark.driver.maxResultSize", "1g").toLowerCase match {
+        case x if x.endsWith("g") ⇒ x.substring(0, x.length - 1).toInt * 1024
+        case x if x.endsWith("m") ⇒ x.substring(0, x.length - 1).toInt
+      }
+
+      val sizeCnt = trainSet.count()
+      val parts = Math.ceil(sizeByte * sizeCnt / (1024 * 1024.0) / (available * 0.8)).toInt
+      logger info s"Training set will be splited into $parts partitions, because available maxResultSize is $available MB."
+
+      Array.fill(parts)(1.0)
+    }
+    /** Randomly splitted RDDs **/
+    var rddSamples = trainSet.randomSplit(sampleSize).toIterator
+    /** Current sampling sequence */
+    var temp = Random.shuffle(rddSamples.next().collect().toSeq).sliding(param.miniBatch, param.miniBatch)
 
     override def hasNext: Boolean = true
 
     override def next(): Seq[(IN, EXP)] = {
       val next = temp.next()
       if (!temp.hasNext) {
-        temp = Await.result(tempF, 1.hour).toIterator.sliding(param.miniBatch, param.miniBatch)
-        tempF = attachNext()
+        if (!rddSamples.hasNext)
+          rddSamples = trainSet.randomSplit(sampleSize).toIterator
+        temp = Random.shuffle(rddSamples.next().collect().toSeq).sliding(param.miniBatch, param.miniBatch)
       }
       next
     }
