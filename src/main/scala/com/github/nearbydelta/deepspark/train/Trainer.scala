@@ -70,6 +70,8 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
   /** Weight loss of best iter */
   @transient private var prevLossW: Double = Double.PositiveInfinity
 
+  def getStatus = (bestIter, prevLossE, prevLossW)
+
   /**
    * Train using given RDD sequence.
    */
@@ -98,7 +100,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
       network.setUpdatable(true)
 
       val epoch = bestIter * validationPeriod
-      val patience = Math.min(Math.max(5, bestIter) * (param.waitAfterUpdate + 1), param.maxIter)
+      val patience = Math.min(Math.max(5, bestIter * (param.waitAfterUpdate + 1)), param.maxIter)
       printProgress(bestIter, patience, prevLossE, prevLossW)
       trainSmallBatch(epoch, patience)
       loadStatus()
@@ -186,7 +188,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
    */
   private final def loadStatus() = {
     val input = new Input(file.inputStream())
-    val kryo = KryoWrap.kryo
+    val kryo = KryoWrap.get.kryo
     bestIter = input.readInt()
     prevLossE = input.readDouble()
     prevLossW = input.readDouble()
@@ -246,7 +248,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
    */
   private final def saveStatus(path: File = file) = {
     val output = new Output(path.outputStream())
-    val kryo = KryoWrap.kryo
+    val kryo = KryoWrap.get.kryo
     output.writeInt(bestIter)
     output.writeDouble(prevLossE)
     output.writeDouble(prevLossW)

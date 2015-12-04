@@ -6,19 +6,21 @@ import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, KryoSerializable}
 import com.github.nearbydelta.deepspark.data.{DataVec, Weight}
 
+import scala.collection.mutable
+
 /**
  * __Trait__ that describes the algorithm for weight update
  *
  * Because each weight update requires history, we recommend to make inherited one as a class. 
  */
 trait LedgerBuilder extends Serializable with KryoSerializable {
-  def getUpdater(model: ListLedger, delta: LedgerNote): LedgerAlgorithm
+  def getUpdater(model: ListLedger): LedgerAlgorithm
 }
 
 trait LedgerAlgorithm {
   protected lazy val dimension = x.head.length
+  val delta: LedgerNote = new mutable.HashMap[Int, DataVec]() with mutable.SynchronizedMap[Int, DataVec]
   val x: ListLedger
-  val delta: LedgerNote
 
   def loss: Double = x.map { v ⇒
     val n = norm(v)
@@ -28,7 +30,7 @@ trait LedgerAlgorithm {
   /**
    * Execute the algorithm for given __Δweight__ and __weights__
    */
-  def update(): Unit
+  def update: () ⇒ Unit
 }
 
 
@@ -49,8 +51,8 @@ class LedgerAdaDelta(var l2decay: Double = 0.0001,
   extends LedgerBuilder {
   def this() = this(0.0001, 0.95, 1e-6)
 
-  override def getUpdater(model: ListLedger, delta: LedgerNote): LedgerAlgorithm =
-    new Updater(model, delta)
+  override def getUpdater(model: ListLedger): LedgerAlgorithm =
+    new Updater(model)
 
   override def read(kryo: Kryo, input: Input): Unit = {
     l2decay = input.readDouble()
@@ -64,8 +66,7 @@ class LedgerAdaDelta(var l2decay: Double = 0.0001,
     output.writeDouble(historyEpsilon)
   }
 
-  class Updater(override val x: ListLedger,
-                override val delta: LedgerNote)
+  class Updater(override val x: ListLedger)
     extends LedgerAlgorithm {
     private lazy val deltaSq = LedgerNoteZero() withDefault (_ ⇒ DenseVector.zeros[Double](dimension))
     private lazy val gradSq = LedgerNoteZero() withDefault (_ ⇒ DenseVector.zeros[Double](dimension))
@@ -75,8 +76,8 @@ class LedgerAdaDelta(var l2decay: Double = 0.0001,
     /**
      * Execute the algorithm for given __Δ(weight)__ and __weights__
      */
-    override def update(): Unit = {
-      delta.foreach {
+    override def update = () ⇒ {
+      delta.par.foreach {
         case (id, dW) ⇒
           val vec = x(id)
 
@@ -128,8 +129,8 @@ class LedgerAdaGrad(var rate: Double = 0.6,
   extends LedgerBuilder {
   def this() = this(0.6, 0.0001, 1e-6)
 
-  override def getUpdater(model: ListLedger, delta: LedgerNote): LedgerAlgorithm =
-    new Updater(model, delta)
+  override def getUpdater(model: ListLedger): LedgerAlgorithm =
+    new Updater(model)
 
   override def read(kryo: Kryo, input: Input): Unit = {
     l2decay = input.readDouble()
@@ -143,8 +144,7 @@ class LedgerAdaGrad(var rate: Double = 0.6,
     output.writeDouble(fudgeFactor)
   }
 
-  class Updater(override val x: ListLedger,
-                override val delta: LedgerNote)
+  class Updater(override val x: ListLedger)
     extends LedgerAlgorithm {
     private lazy val history = LedgerNoteZero() withDefault (_ ⇒ DenseVector.zeros[Double](dimension))
 
@@ -153,8 +153,8 @@ class LedgerAdaGrad(var rate: Double = 0.6,
     /**
      * Execute the algorithm for given __Δ(weight)__ and __weights__
      */
-    override def update(): Unit = {
-      delta.foreach {
+    override def update = () ⇒ {
+      delta.par.foreach {
         case (id, dW) ⇒
           val vec = x(id)
 
@@ -197,8 +197,8 @@ class LedgerSGD(var rate: Double = 0.03,
   extends LedgerBuilder {
   def this() = this(0.03, 0.0001, 0.0001)
 
-  override def getUpdater(model: ListLedger, delta: LedgerNote): LedgerAlgorithm =
-    new Updater(model, delta)
+  override def getUpdater(model: ListLedger): LedgerAlgorithm =
+    new Updater(model)
 
   override def read(kryo: Kryo, input: Input): Unit = {
     l2decay = input.readDouble()
@@ -212,8 +212,7 @@ class LedgerSGD(var rate: Double = 0.03,
     output.writeDouble(momentum)
   }
 
-  class Updater(override val x: ListLedger,
-                override val delta: LedgerNote)
+  class Updater(override val x: ListLedger)
     extends LedgerAlgorithm {
     @transient private lazy val history = LedgerNoteZero() withDefault (_ ⇒ DenseVector.zeros[Double](dimension))
 
@@ -222,8 +221,8 @@ class LedgerSGD(var rate: Double = 0.03,
     /**
      * Execute the algorithm for given __Δ(weight)__ and __weights__
      */
-    override def update(): Unit = {
-      delta.foreach {
+    override def update = () ⇒ {
+      delta.par.foreach {
         case (id, dW) ⇒
           val vec = x(id)
 

@@ -7,6 +7,7 @@ import com.github.nearbydelta.deepspark.layer.InputLayer
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 
+import scala.collection.mutable.ArrayBuffer
 import scala.collection.parallel.ParSeq
 
 /**
@@ -27,8 +28,11 @@ class GeneralNetwork[In, Out](var inputLayer: InputLayer[In, _]) extends Network
       case None ⇒ 0
     }
 
-  override def backward(error: ParSeq[DataVec]): Unit = {
-    inputLayer backward backwardSeq(error)
+  override def backward(error: ParSeq[DataVec]): ArrayBuffer[() ⇒ Unit] = {
+    val (upper, fseq) = backwardSeq(error)
+    val (x, f) = inputLayer backward upper
+    fseq ++= f.seq
+    fseq
   }
 
   override def broadcast(sc: SparkContext): Unit = {

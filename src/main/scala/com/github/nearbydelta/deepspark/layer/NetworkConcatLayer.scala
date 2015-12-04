@@ -58,35 +58,33 @@ trait NetworkConcatLayer[X] extends InputLayer[Array[X], DataVec] {
 
   @deprecated(message = "NetworkConcatLayer cannot be used inside of RDD, because of its implementation.",
     since = "1.0.0")
-  override def backprop(seq: ParSeq[((Array[X], DataVec), DataVec)]): ParSeq[DataVec] =
+  override def backprop(seq: ParSeq[((Array[X], DataVec), DataVec)]): (ParSeq[DataVec], ParSeq[() ⇒ Unit]) =
     throw new IllegalStateException("NetworkConcatLayer cannot be used inside of RDD, because of its implementation.")
 
-  override def backward(error: ParSeq[DataVec]): ParSeq[DataVec] = {
-    backprop.par.foreach {
+  override def backward(error: ParSeq[DataVec]): (ParSeq[DataVec], ParSeq[() ⇒ Unit]) = {
+    val seq = backprop.par.flatMap {
       case (net, from) ⇒
         val to = from + net.NOut
-        net backward error.map(_.apply(from until to))
+        net backward error.map(_.slice(from, to))
     }
 
-    null
+    (null, seq)
   }
 
   override def broadcast(sc: SparkContext): Unit = networks.par.foreach(_.broadcast(sc))
 
   override def forward(in: ParSeq[Array[X]]): ParSeq[DataVec] = {
-    val result = (0 until networks.size).par.map { id ⇒
-      val net = networks(id)
-      net.forward(in.map(x ⇒ x(id))).toIterator
-    }.toIndexedSeq
-
-    var i = in.length
-    val buf = ArrayBuffer[DataVec]()
-    while (i > 0) {
-      i -= 1
-      val vectors = result.map(_.next()).seq
-      buf += DenseVector.vertcat(vectors: _*)
+    val vectors = Array.fill(in.size)(DenseVector.zeros[Double](NOut)).par
+    (0 until networks.size).par.foreach { nid ⇒
+      val net = networks(nid)
+      val from = backprop(nid)._2
+      val end = from + net.NOut
+      net.forward(in.map(x ⇒ x(nid))).zipWithIndex.foreach {
+        case (vec, idx) ⇒
+          vectors(idx).slice(from, end) := vec
+      }
     }
-    buf.par
+    vectors
   }
 
   override def initiateBy(builder: WeightBuilder): this.type = {

@@ -3,6 +3,7 @@ package com.github.nearbydelta.deepspark.network
 import com.github.nearbydelta.deepspark.data._
 import org.apache.spark.rdd.RDD
 
+import scala.collection.mutable.ArrayBuffer
 import scala.collection.parallel.ParSeq
 
 /**
@@ -10,8 +11,8 @@ import scala.collection.parallel.ParSeq
  * @tparam Out Type of output.
  */
 class SimpleNetwork[Out]() extends Network[DataVec, Out] {
-  override def backward(error: ParSeq[DataVec]): Unit = {
-    backwardSeq(error)
+  override def backward(error: ParSeq[DataVec]): ArrayBuffer[() ⇒ Unit] = {
+    backwardSeq(error)._2
   }
 
   override def forward(in: DataVec) = forwardSingle(in)

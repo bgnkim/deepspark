@@ -26,7 +26,7 @@ class AverageLedger extends Ledger[DataVec] {
       pad
   }
 
-  override def backprop(seq: ParSeq[((Array[Int], DataVec), DataVec)]): ParSeq[DataVec] = {
+  override def backprop(seq: ParSeq[((Array[Int], DataVec), DataVec)]): (ParSeq[DataVec], ParSeq[() ⇒ Unit]) = {
     seq.foreach { case ((in, _), err) ⇒
       if (in.nonEmpty) {
         err :/= in.length.toDouble
@@ -38,9 +38,7 @@ class AverageLedger extends Ledger[DataVec] {
         updateWord(padID, err)
     }
 
-    algorithm.update()
-
-    null
+    (null, ParSeq(algorithm.update))
   }
 
   override def withModel(model: LedgerModel, builder: LedgerBuilder): this.type = {

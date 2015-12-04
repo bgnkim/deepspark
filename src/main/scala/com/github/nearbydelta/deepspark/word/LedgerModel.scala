@@ -16,8 +16,6 @@ import scala.reflect.io.{File, Path}
 class LedgerWords extends Serializable with KryoSerializable {
   /** ID for pad */
   lazy final val padID = words.getOrElse(LedgerModel.PAD, -1)
-  /** Size of this layer */
-  lazy final val size = words.size
   /** ID for Unknown */
   lazy final val unkID = words(LedgerModel.UnkAll)
   /** Mapping of words */
@@ -38,6 +36,9 @@ class LedgerWords extends Serializable with KryoSerializable {
         }
     }
   }
+
+  /** Size of this layer */
+  def size = words.size
 
   override def read(kryo: Kryo, input: Input): Unit = {
     words.clear()
@@ -126,7 +127,7 @@ class LedgerModel extends Serializable with KryoSerializable {
   def saveTo(file: Path) =
     try {
       val oos = new Output(File(file).outputStream())
-      this.write(KryoWrap.kryo, oos)
+      this.write(KryoWrap.get.kryo, oos)
       oos.close()
     } catch {
       case _: Throwable ⇒
@@ -203,7 +204,7 @@ object LedgerModel {
     if (File(path).exists) {
       val in = new Input(File(path).inputStream())
       val model = new LedgerModel
-      model.read(KryoWrap.kryo, in)
+      model.read(KryoWrap.get.kryo, in)
       in.close()
 
       logger info s"READ Embedding Vectors finished (Dimension ${model.dimension}, Size ${model.size})"
@@ -250,7 +251,7 @@ object LedgerModel {
         }
       }
 
-      val shapeThreshold = wordmap.size * 0.0001
+      val shapeThreshold = wordmap.words.size * 0.0001
       logger info s"Generate shapes for unknown vectors (${unkCounts.count(_._2._2 > shapeThreshold)} shapes)"
 
       unkCounts.par.map {

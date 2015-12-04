@@ -26,7 +26,7 @@ object TestEmbedding {
     val vectors = mutable.ArrayBuffer[DataVec]()
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ".sliding(1).foreach {
       letter ⇒
-        letters.words += letter → letters.size
+        letters.words += letter → letters.words.size
         vectors += DenseVector.rand(5)
     }
 
@@ -88,7 +88,8 @@ object TestEmbedding {
 
       val trained = new TrainerBuilder(TrainingParam(miniBatch = 10, maxIter = 1000,
         reuseSaveData = true, storageLevel = StorageLevel.MEMORY_ONLY))
-        .train(network, data, data, SquaredErr, "EmbeddingTest")
+        .build(network, data, data, SquaredErr, "EmbeddingTest")
+        .getTrainedNetwork
 
       val file = File("testfile")
       trained.saveTo(file)

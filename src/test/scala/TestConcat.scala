@@ -62,7 +62,8 @@ object TestConcat {
       require(network.NOut == 1)
 
       val trained = new TrainerBuilder(TrainingParam(miniBatch = 10, maxIter = 1000, storageLevel = StorageLevel.MEMORY_ONLY))
-        .train(network, train, test, SquaredErr, (x: Boolean) ⇒ if (x) DenseVector(1.0) else DenseVector(0.0), "XORTest")
+        .build(network, train, test, SquaredErr, (x: Boolean) ⇒ if (x) DenseVector(1.0) else DenseVector(0.0), "XORTest")
+        .getTrainedNetwork
 
       (0 until 10).foreach { _ ⇒
         val (in, exp) = data(Math.floor(Math.random() * data.length).toInt)

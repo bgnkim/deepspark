@@ -8,6 +8,7 @@ import com.github.nearbydelta.deepspark.layer.TransformLayer
 import com.github.nearbydelta.deepspark.word.{LedgerBuilder, LedgerModel}
 
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 import scala.collection.parallel.ParSeq
 
 /**
@@ -40,8 +41,10 @@ class RNNLedger(var layer: TransformLayer)
       mutable.Stack(pad)
   }
 
-  override def backprop(seq: ParSeq[((Array[Int], mutable.Stack[DataVec]), DataVec)]): ParSeq[DataVec] = {
-    seq.foreach { case ((in, out), err) ⇒
+  override def backprop(seq: ParSeq[((Array[Int], mutable.Stack[DataVec]), DataVec)]): (ParSeq[DataVec], ParSeq[() ⇒ Unit]) = {
+    val fseq = seq.flatMap { case ((in, out), err) ⇒
+      val buf = ArrayBuffer[() => Unit]()
+
       if (in.nonEmpty) {
         val words = in.reverseIterator
         var error = err
@@ -53,9 +56,12 @@ class RNNLedger(var layer: TransformLayer)
           if (out.nonEmpty) {
             val i = out.pop()
 
-            val compoundErr = layer.backprop(ParSeq((i, o) → error)).head
-            val errorRight = compoundErr(NOut to -1)
-            error = compoundErr(0 until NOut)
+            // Accumulate delta, but, lazy update.
+            val (compoundErr, f) = layer.backprop(ParSeq((i, o) → error))
+            buf appendAll f.seq
+
+            val errorRight = compoundErr.head(NOut to -1)
+            error = compoundErr.head(0 until NOut)
 
             updateWord(curr, errorRight)
           } else {
@@ -64,11 +70,11 @@ class RNNLedger(var layer: TransformLayer)
         }
       } else
         updateWord(padID, err)
+
+      buf
     }
 
-    algorithm.update()
-
-    null
+    (null, algorithm.update +: fseq)
   }
 
   override def initiateBy(builder: WeightBuilder): this.type = {

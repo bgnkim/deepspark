@@ -2,11 +2,13 @@ package com.github.nearbydelta.deepspark.word.layer
 
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.{Input, Output}
+import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.layer.InputLayer
 import com.github.nearbydelta.deepspark.word._
 import org.apache.spark.SparkContext
 import org.apache.spark.broadcast.Broadcast
 
+import scala.collection.parallel.ParSeq
 import scala.reflect.{ClassTag, classTag}
 
 /**
@@ -33,6 +35,9 @@ trait FixedLedger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
   protected def vectorOf(str: Int) =
     if (bcModel != null) bcModel.value.vectorAt(str)
     else model.vectorAt(str)
+
+  override def backprop(seq: ParSeq[((Array[Int], OutInfo), DataVec)]): (ParSeq[DataVec], ParSeq[() ⇒ Unit]) =
+    (null, ParSeq())
 
   override def broadcast(sc: SparkContext): Unit = {
     bcModel = sc.broadcast(model)

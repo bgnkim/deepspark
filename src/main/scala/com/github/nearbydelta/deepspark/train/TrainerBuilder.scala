@@ -31,15 +31,15 @@ class TrainerBuilder(val param: TrainingParam = TrainingParam()) {
    * @tparam OUT Type of real output
    * @return trained network.
    */
-  def train[X, IN, OUT](network: Network[IN, OUT],
+  def build[X, IN, OUT](network: Network[IN, OUT],
                         trainset: RDD[X],
                         testset: RDD[X],
                         objective: Objective,
                         expectConverter: OUT ⇒ DataVec,
                         mapper: X ⇒ (IN, OUT),
                         name: String = "temp")
-                       (implicit evidence$1: ClassTag[IN], evidence$2: ClassTag[OUT]): Network[IN, OUT] =
-    train(network, trainset.map(mapper), testset.map(mapper), objective, expectConverter, name)
+                       (implicit evidence$1: ClassTag[IN], evidence$2: ClassTag[OUT]): StaticTrainer[IN, OUT] =
+    build(network, trainset.map(mapper), testset.map(mapper), objective, expectConverter, name)
 
   /**
    * Train network
@@ -55,16 +55,16 @@ class TrainerBuilder(val param: TrainingParam = TrainingParam()) {
    * @tparam OUT Type of real output
    * @return trained network.
    */
-  def train[IN, OUT](network: Network[IN, OUT],
+  def build[IN, OUT](network: Network[IN, OUT],
                      trainset: RDD[(IN, OUT)],
                      testset: RDD[(IN, OUT)],
                      objective: Objective,
                      expectConverter: OUT ⇒ DataVec,
                      name: String)
-                    (implicit evidence$1: ClassTag[IN], evidence$2: ClassTag[OUT]): Network[IN, OUT] = {
+                    (implicit evidence$1: ClassTag[IN], evidence$2: ClassTag[OUT]): StaticTrainer[IN, OUT] = {
     val train = trainset.mapValues(expectConverter).setName(name + " (TRAIN)").persist(param.storageLevel)
     val test = testset.mapValues(expectConverter).setName(name + " (EVAL)").persist(param.storageLevel)
-    new StaticTrainer[IN, OUT](network, objective, train, test, name, param).getTrainedNetwork
+    new StaticTrainer[IN, OUT](network, objective, train, test, name, param)
   }
 
   /**
@@ -78,15 +78,15 @@ class TrainerBuilder(val param: TrainingParam = TrainingParam()) {
    * @tparam IN Type of input
    * @return trained network.
    */
-  def train[IN](network: Network[IN, DataVec],
+  def build[IN](network: Network[IN, DataVec],
                 trainset: RDD[(IN, DataVec)],
                 testset: RDD[(IN, DataVec)],
                 objective: Objective,
                 name: String)
-               (implicit evidence$1: ClassTag[IN]): Network[IN, DataVec] = {
+               (implicit evidence$1: ClassTag[IN]): StaticTrainer[IN, DataVec] = {
     val train = trainset.setName(name + " (TRAIN)").persist(param.storageLevel)
     val test = testset.setName(name + " (EVAL)").persist(param.storageLevel)
-    new StaticTrainer[IN, DataVec](network, objective, train, test, name, param).getTrainedNetwork
+    new StaticTrainer[IN, DataVec](network, objective, train, test, name, param)
   }
 
   /**
@@ -103,16 +103,16 @@ class TrainerBuilder(val param: TrainingParam = TrainingParam()) {
    * @tparam OUT Type of real output
    * @return trained network.
    */
-  def trainFlexible[IN, OUT](network: Network[IN, OUT],
+  def buildFlexible[IN, OUT](network: Network[IN, OUT],
                              trainset: RDD[(IN, OUT)],
                              testset: RDD[(IN, OUT)],
                              objective: Objective,
                              expectConverter: OUT ⇒ DataVec,
                              name: String)
-                            (implicit evidence$1: ClassTag[IN], evidence$2: ClassTag[OUT]): Network[IN, OUT] = {
+                            (implicit evidence$1: ClassTag[IN], evidence$2: ClassTag[OUT]): FlexibleTrainer[IN, OUT] = {
     val train = trainset.setName(name + " (TRAIN)").persist(param.storageLevel)
     val test = testset.setName(name + " (EVAL)").persist(param.storageLevel)
-    new FlexibleTrainer[IN, OUT](network, objective, expectConverter, train, test, name, param).getTrainedNetwork
+    new FlexibleTrainer[IN, OUT](network, objective, expectConverter, train, test, name, param)
   }
 }
 
@@ -130,7 +130,7 @@ class TrainerBuilder(val param: TrainingParam = TrainingParam()) {
  * @tparam IN Input type
  * @tparam OUT Output type
  */
-private class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
+class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
                                      val objective: Objective,
                                      val trainSet: RDD[(IN, DataVec)],
                                      val testSet: RDD[(IN, DataVec)],
@@ -156,7 +156,9 @@ private class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
         err
     }
 
-    network.backward(error)
+    network.backward(error).par.foreach {
+      x ⇒ if (x != null) x.apply()
+    }
 
     val maxEpoch = getMaxEpoch(epoch, patience)
     if (maxEpoch > 0)
@@ -209,6 +211,7 @@ private class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
  * Flexible real-output trainer. (Real output vector re-calcuated every evaluation.)
  * @param network Network
  * @param objective Objective function
+ * @param expectConverter Function to convert real output into vector
  * @param trainSet Train set
  * @param testSet Evaluation set
  * @param name Name of trainer
@@ -218,7 +221,7 @@ private class StaticTrainer[IN, OUT](var network: Network[IN, OUT],
  * @tparam IN Input type
  * @tparam OUT Output type
  */
-private class FlexibleTrainer[IN, OUT](var network: Network[IN, OUT],
+class FlexibleTrainer[IN, OUT](var network: Network[IN, OUT],
                                        val objective: Objective,
                                        val expectConverter: OUT ⇒ DataVec,
                                        val trainSet: RDD[(IN, OUT)],
@@ -245,7 +248,9 @@ private class FlexibleTrainer[IN, OUT](var network: Network[IN, OUT],
         err
     }
 
-    network.backward(error)
+    network.backward(error).par.foreach {
+      x ⇒ if (x != null) x.apply()
+    }
 
     val maxEpoch = getMaxEpoch(epoch, patience)
     if (maxEpoch > 0)

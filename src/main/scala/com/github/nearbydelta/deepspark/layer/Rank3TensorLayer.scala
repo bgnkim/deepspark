@@ -79,7 +79,7 @@ abstract class Rank3TensorLayer extends TransformLayer {
     act(intermediate)
   }
 
-  override def backprop(seq: ParSeq[((DataVec, DataVec), DataVec)]): ParSeq[DataVec] = {
+  override def backprop(seq: ParSeq[((DataVec, DataVec), DataVec)]): (ParSeq[DataVec], ParSeq[() ⇒ Unit]) = {
     val (internal, external) = seq.map { case ((in, out), error) ⇒
       val inA = in1(in)
       val inB = in2(in)
@@ -160,13 +160,11 @@ abstract class Rank3TensorLayer extends TransformLayer {
 
     val (dX, dL, dQ) = internal.unzip3
 
-    bias update dX
-    linear update dL
-    (0 until NOut).par.foreach { id ⇒
-      quadratic(id) update dQ(id)
+    val parseq = (0 until NOut).par.map { id ⇒
+      quadratic(id) -= dQ(id)
     }
 
-    external
+    (external, ParSeq(bias -= dX, linear -= dL) ++ parseq)
   }
 
   override def initiateBy(builder: WeightBuilder): this.type = {

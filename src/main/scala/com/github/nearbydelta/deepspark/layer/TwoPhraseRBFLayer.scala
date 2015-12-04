@@ -77,7 +77,7 @@ class TwoPhraseRBFLayer extends TransformLayer {
     } else
       DenseVector.zeros[Double](NOut)
 
-  override def backprop(seq: ParSeq[((DataVec, DataVec), DataVec)]): ParSeq[DataVec] = {
+  override def backprop(seq: ParSeq[((DataVec, DataVec), DataVec)]): (ParSeq[DataVec], ParSeq[() ⇒ Unit]) = {
     val (dE, external) = seq.collect { case ((in, out), error) if in != null ⇒
       val diff = centers.value(::, *) - in
       val dist = norm.apply(diff, Axis._0).toDenseVector
@@ -113,14 +113,14 @@ class TwoPhraseRBFLayer extends TransformLayer {
       (dGdE, dGdx)
     }.unzip
 
-    epsilon update dE
-
-    external
+    (external, ParSeq(
+      epsilon -= dE
+    ))
   }
 
   override def initiateBy(builder: WeightBuilder): this.type = {
     if (builder != null && NIn > 0 && NOut > 0) {
-      builder.buildVector(epsilon, NOut)
+      builder.buildVector(epsilon, NOut, noReg = true)
       builder.buildMatrix(centers, NIn, NOut, noReg = true)
     }
 

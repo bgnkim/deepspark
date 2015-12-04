@@ -6,7 +6,6 @@ import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.word.{LedgerBuilder, LedgerModel}
 
-import scala.collection.mutable.ArrayBuffer
 import scala.collection.parallel.ParSeq
 
 /**
@@ -16,7 +15,6 @@ import scala.collection.parallel.ParSeq
 class ConcatLedger(private var takeRight: Boolean = true)
   extends Ledger[DataVec] {
   override val outVecOf: (DataVec) ⇒ DataVec = x ⇒ x
-  private var dimension: Int = 0
   private var words: Int = 0
 
   def this() = this(true)
@@ -31,65 +29,80 @@ class ConcatLedger(private var takeRight: Boolean = true)
   }
 
   override def apply(x: Array[Int]): DataVec = {
-    val buffer = ArrayBuffer[DataVec]()
+    val vec = DenseVector.zeros[Double](NOut)
     if (takeRight) {
-      while (buffer.length + x.length < words) {
-        buffer += pad
+      x.takeRight(words).foldLeft(0) {
+        case (start, word) ⇒
+          val end = start + dimension
+          vec.slice(start, end) := vectorOf(word)
+          end
       }
-    }
-    val it = x.iterator
-    while (it.hasNext) {
-      buffer += vectorOf(it.next())
-    }
-    if (!takeRight) {
-      while (buffer.length < words) {
-        buffer += pad
+      (x.length until words).par.foreach { x ⇒
+        val start = x * dimension
+        val end = (x + 1) * dimension
+        vec.slice(start, end) := pad
+      }
+    } else {
+      val pads = Math.max(words - x.length, 0)
+      (0 until pads).par.foreach { x ⇒
+        val start = x * dimension
+        val end = (x + 1) * dimension
+        vec.slice(start, end) := pad
+      }
+      x.take(words).foldLeft(pads * dimension) {
+        case (start, word) ⇒
+          val end = start + dimension
+          vec.slice(start, end) := vectorOf(word)
+          end
       }
     }
 
-    DenseVector.vertcat(buffer: _*)
+    vec
   }
 
-  override def backprop(seq: ParSeq[((Array[Int], DataVec), DataVec)]): ParSeq[DataVec] = {
+  override def backprop(seq: ParSeq[((Array[Int], DataVec), DataVec)]): (ParSeq[DataVec], ParSeq[() ⇒ Unit]) = {
     seq.foreach { case ((in, _), err) ⇒
-      var index = 0
       if (takeRight) {
-        while (index + in.length < words) {
-          updateWord(padID, err(index * dimension until (index + 1) * dimension))
-          index += 1
+        in.takeRight(words).foldLeft(0) {
+          case (start, word) ⇒
+            val end = start + dimension
+            updateWord(word, err.slice(start, end))
+            end
         }
-      }
-      val it = in.iterator
-      while (it.hasNext) {
-        updateWord(it.next(), err(index * dimension until (index + 1) * dimension))
-        index += 1
-      }
-      if (!takeRight) {
-        while (index < words) {
-          updateWord(padID, err(index * dimension until (index + 1) * dimension))
-          index += 1
+        (in.length until words).foreach { x ⇒
+          val start = x * dimension
+          val end = (x + 1) * dimension
+          updateWord(padID, err.slice(start, end))
+        }
+      } else {
+        val pads = Math.max(words - in.length, 0)
+        (0 until pads).foreach { x ⇒
+          val start = x * dimension
+          val end = (x + 1) * dimension
+          updateWord(padID, err.slice(start, end))
+        }
+        in.take(words).foldLeft(pads * dimension) {
+          case (start, word) ⇒
+            val end = start + dimension
+            updateWord(word, err.slice(start, end))
+            end
         }
       }
     }
 
-    algorithm.update()
-
-    null
+    (null, ParSeq(algorithm.update))
   }
 
   override def read(kryo: Kryo, input: Input): Unit = {
     takeRight = input.readBoolean()
     words = input.readInt()
     super.read(kryo, input)
-
-    dimension = model.dimension
   }
 
   override def withModel(model: LedgerModel, builder: LedgerBuilder): this.type = {
     require(model.padID != -1, "Concatenate Ledger Layer needs pad.")
-    dimension = model.dimension
     if (words > 0) {
-      NOut = words * dimension
+      NOut = words * model.dimension
     }
 
     super.withModel(model, builder)

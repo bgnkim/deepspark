@@ -9,7 +9,6 @@ import com.github.nearbydelta.deepspark.word._
 import org.apache.spark.SparkContext
 import org.apache.spark.broadcast.Broadcast
 
-import scala.collection.mutable
 import scala.reflect.{ClassTag, classTag}
 
 /**
@@ -21,7 +20,7 @@ trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
   @transient var algorithm: LedgerAlgorithm = _
   var bcModel: Broadcast[LedgerModel] = _
   @transient var builder: LedgerBuilder = _
-  var delta: LedgerNote = _
+  var dimension: Int = 0
   @transient var model: LedgerModel = _
   protected var padID = -1
 
@@ -29,9 +28,8 @@ trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
     this.model = model
     this.builder = builder
     this.padID = model.padID
-    delta = new mutable.HashMap[Int, DataVec]() with mutable.SynchronizedMap[Int, DataVec]
-      .withDefault(_ ⇒ DenseVector.zeros[Double](model.dimension))
-    algorithm = builder.getUpdater(this.model.vectors, delta)
+    this.dimension = model.dimension
+    this.algorithm = builder.getUpdater(this.model.vectors)
     this
   }
 
@@ -41,8 +39,9 @@ trait Ledger[OutInfo] extends InputLayer[Array[Int], OutInfo] {
     else vectorOf(padID)
 
   protected def updateWord(word: Int, dx: DataVec): Unit =
-    if (word != -1) {
-      delta(word) += dx
+    if (word != -1 && algorithm != null) {
+      val vec = algorithm.delta.getOrElseUpdate(word, DenseVector.zeros[Double](dimension))
+      vec += dx
     }
 
   protected def vectorOf(str: Int) =

@@ -6,9 +6,6 @@ import breeze.linalg.support.CanMapKeyValuePairs
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, KryoSerializable}
 
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent._
-
 /**
  * __Trait__ that describes the algorithm for weight update
  *
@@ -184,6 +181,25 @@ class Weight[X <: Tensor[_, Double]] extends Serializable with KryoSerializable 
   private var _x: X = null.asInstanceOf[X]
 
   /**
+   * Save data for update algorithm.
+   * @param seq Sequence of delta weights, per each instance.
+   */
+  def -=(seq: collection.GenSeq[X])(implicit add: OpAdd.InPlaceImpl2[X, X]): () ⇒ Unit =
+    if (_updater != null) {
+      if (seq.nonEmpty) {
+        val delta = seq.reduce[X] { case (x, y) ⇒
+          add(x, y)
+          x
+        }
+
+        () ⇒ _updater.update(delta)
+      } else
+        null
+    } else {
+      throw new IllegalStateException("Weight instance does not have any Algorithm instance")
+    }
+
+  /**
    * Check if the weight is successfully defined.
    * @return True if weight has value.
    */
@@ -198,25 +214,6 @@ class Weight[X <: Tensor[_, Double]] extends Serializable with KryoSerializable 
     if (_updater != null) {
       val n = normImpl(_x)
       n * n * _updater.l2factor / 2.0
-    } else {
-      throw new IllegalStateException("Weight instance does not have any Algorithm instance")
-    }
-
-  /**
-   * Execute update algorithm.
-   * @param seq Sequence of delta weights, per each instance.
-   */
-  def update(seq: collection.GenSeq[X])(implicit add: OpAdd.InPlaceImpl2[X, X]): Unit =
-    if (_updater != null) {
-      future {
-        if (seq.nonEmpty) {
-          val delta = seq.reduce[X] { case (x, y) ⇒
-            add(x, y)
-            x
-          }
-          _updater.update(delta)
-        }
-      }
     } else {
       throw new IllegalStateException("Weight instance does not have any Algorithm instance")
     }

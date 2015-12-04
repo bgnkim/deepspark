@@ -4,8 +4,6 @@ import breeze.linalg._
 import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.word.LedgerModel
 
-import scala.collection.parallel.ParSeq
-
 /**
  * __Layer__: Basic, Fully-connected Layer
  *
@@ -25,8 +23,6 @@ class FixedAverageLedger extends FixedLedger[DataVec] {
     } else
       pad
   }
-
-  override def backprop(seq: ParSeq[((Array[Int], DataVec), DataVec)]): ParSeq[DataVec] = null
 
   override def withModel(model: LedgerModel): this.type = {
     NOut = model.dimension

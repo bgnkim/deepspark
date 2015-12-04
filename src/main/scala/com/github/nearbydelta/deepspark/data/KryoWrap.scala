@@ -3,7 +3,7 @@ package com.github.nearbydelta.deepspark.data
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 
 import breeze.linalg.{DenseMatrix, DenseVector}
-import com.esotericsoftware.kryo.Serializer
+import com.esotericsoftware.kryo._
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.layer._
 import com.github.nearbydelta.deepspark.network.{GeneralNetwork, SimpleNetwork}
@@ -17,24 +17,21 @@ import org.apache.spark.rdd.RDD
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
-/**
- * Kryo wrapper, which all classes in DeepSpark library are registered.
- */
-object KryoWrap extends Serializable{
-  /**
-   * Kryo object
-   */
+object KryoWrap{
   val customRegister = ArrayBuffer[Kryo ⇒ Unit]()
 
   def addRegisterFunction(fn: Kryo ⇒ Unit): Unit = {
     customRegister += fn
   }
 
+  def get = new KryoWrap(customRegister)
+
   /**
    * Register all classes in DeepSpark library into given Kryo object.
    * @param kryo Kryo object to register classes in DeepSpark library.
    */
   def init(kryo: Kryo): Unit = {
+    kryo.setClassLoader(this.getClass.getClassLoader)
     // Please, preserve this ordering.
     kryo.register(classOf[LedgerWords])
     kryo.register(classOf[LedgerModel])
@@ -85,25 +82,31 @@ object KryoWrap extends Serializable{
 
     kryo.register(SoftmaxCEE.getClass)
     kryo.register(classOf[FixedAverageLedger])
-
-    customRegister.foreach(fn ⇒ fn(kryo))
+    kryo.register(classOf[VectorRBFLayer])
   }
+}
 
+/**
+ * Kryo wrapper, which all classes in DeepSpark library are registered.
+ */
+class KryoWrap(val customRegister: ArrayBuffer[Kryo ⇒ Unit] = ArrayBuffer()) extends Serializable{
   def kryo = {
     val k = new ScalaKryoInstantiator().newKryo()
-    init(k)
+    KryoWrap.init(k)
+    customRegister.foreach(fn ⇒ fn(k))
     k
   }
 
   def readKryoFile[X](sc: SparkContext, path: String)(implicit evidence$1: ClassTag[X]): RDD[X] = {
     sc.sequenceFile(path, classOf[NullWritable], classOf[BytesWritable], 2)
       .mapPartitions{
-      lazy val kryo = KryoWrap.kryo
+      lazy val k = kryo
+
       _.flatMap{
         case (_, bytes) ⇒
           val bis = new ByteArrayInputStream(bytes.getBytes)
           val input = new Input(bis)
-          kryo.readClassAndObject(input).asInstanceOf[Array[X]]
+          k.readClassAndObject(input).asInstanceOf[Array[X]]
       }
     }
   }
@@ -111,14 +114,14 @@ object KryoWrap extends Serializable{
   def saveAsKryoFile[X](rdd: RDD[X], path: String)
                        (implicit evidence$1: ClassTag[X], evidence$2: ClassTag[Array[X]]) = {
     rdd.mapPartitions{
-      lazy val kryo = KryoWrap.kryo
+      lazy val k = kryo
 
       iter ⇒
         iter.grouped[X](10).map{ x ⇒
           val arr = x.toArray[X]
           val bos = new ByteArrayOutputStream()
           val out = new Output(bos, 1024*1024)
-          kryo.writeClassAndObject(out, arr)
+          k.writeClassAndObject(out, arr)
           out.flush()
 
           (NullWritable.get(), new BytesWritable(bos.toByteArray))

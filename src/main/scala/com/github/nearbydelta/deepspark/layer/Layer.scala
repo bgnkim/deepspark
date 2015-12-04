@@ -53,14 +53,14 @@ trait Layer[In, OutInfo] extends Serializable with KryoSerializable {
    * @param seq Sequence of entries to be used for backward computation.
    * @return Error sequence, to backpropagate into previous layer.
    */
-  def backprop(seq: ParSeq[((In, OutInfo), DataVec)]): ParSeq[DataVec]
+  def backprop(seq: ParSeq[((In, OutInfo), DataVec)]): (ParSeq[DataVec], ParSeq[() ⇒ Unit])
 
   /**
    * Backward computation using propagated error.
    * @param error Propagated error sequence.
    * @return Error sequence for back propagation.
    */
-  def backward(error: ParSeq[DataVec]): ParSeq[DataVec] = backprop(inoutSEQ.zip(error))
+  def backward(error: ParSeq[DataVec]): (ParSeq[DataVec], ParSeq[() ⇒ Unit]) = backprop(inoutSEQ.zip(error))
 
   /**
    * Apply this layer (forward computation)

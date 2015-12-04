@@ -10,6 +10,7 @@ import org.apache.spark.rdd.RDD
 
 import scala.annotation.tailrec
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 import scala.collection.parallel.ParSeq
 import scala.reflect.ClassTag
 import scala.reflect.io.{File, Path}
@@ -52,7 +53,7 @@ trait Network[In, Out] extends Serializable with KryoSerializable {
    * Execute error backpropagation
    * @param err Sequence of error to be backprop.
    */
-  def backward(err: ParSeq[DataVec]): Unit
+  def backward(err: ParSeq[DataVec]): ArrayBuffer[() ⇒ Unit]
 
   /**
    * Broadcast resources of input layer.
@@ -125,7 +126,7 @@ trait Network[In, Out] extends Serializable with KryoSerializable {
   def saveTo(file: Path) =
     try {
       val output = new Output(File(file).outputStream())
-      KryoWrap.kryo.writeClassAndObject(output, this)
+      KryoWrap.get.kryo.writeClassAndObject(output, this)
       output.close()
     } catch {
       case _: Throwable ⇒
@@ -151,13 +152,17 @@ trait Network[In, Out] extends Serializable with KryoSerializable {
    * @param err Top-level error to be propagated backward.
    * @return lowest-level error sequence.
    */
-  protected final def backwardSeq(err: ParSeq[DataVec]): ParSeq[DataVec] = {
+  protected final def backwardSeq(err: ParSeq[DataVec]): (ParSeq[DataVec], ArrayBuffer[() ⇒ Unit]) = {
     val it = layerSeq.reverseIterator
+    val futures = ArrayBuffer[() ⇒ Unit]()
     var seq = err
     while (it.hasNext) {
-      seq = it.next().backward(seq)
+      val (s, f) = it.next().backward(seq)
+      futures ++= f.seq
+      seq = s
     }
-    seq
+
+    (seq, futures)
   }
 
   /**
@@ -228,7 +233,7 @@ object Network {
    */
   def readFrom[T <: Network[_, _]](file: Path) = {
     val input = new Input(File(file).inputStream())
-    val obj = KryoWrap.kryo.readClassAndObject(input).asInstanceOf[T]
+    val obj = KryoWrap.get.kryo.readClassAndObject(input).asInstanceOf[T]
     input.close()
     obj
   }
