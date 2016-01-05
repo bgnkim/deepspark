@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link href='https://fonts.googleapis.com/css?family=Architects+Daughter' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/github-light.css" media="screen">
+    <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <title>Deepspark by nearbydelta</title>
+  </head>
+
+  <body>
+    <header>
+      <div class="inner">
+        <h1>Deepspark</h1>
+        <h2>A neural network library which trained by Spark RDD instances.</h2>
+        <a href="https://github.com/nearbydelta/deepspark" class="button"><small>View project on</small> GitHub</a>
+      </div>
+    </header>
+
+    <div id="content-wrapper">
+      <div class="inner clearfix">
+        <section id="main-content">
+          <h1>
+<a id="deepspark-120" class="anchor" href="#deepspark-120" aria-hidden="true"><span class="octicon octicon-link"></span></a>DeepSpark 1.2.0</h1>
+
+<p>A <em>Neural Network implementation</em> with Scala, <a href="https://github.com/scalanlp/breeze">Breeze</a> &amp; <a href="http://spark.apache.org">Spark</a></p>
+
+<p>Deep Spark follows <a href="http://choosealicense.com/licenses/gpl-2.0/">GPL v2 license</a>.</p>
+
+<h1>
+<a id="features" class="anchor" href="#features" aria-hidden="true"><span class="octicon octicon-link"></span></a>Features</h1>
+
+<h2>
+<a id="network" class="anchor" href="#network" aria-hidden="true"><span class="octicon octicon-link"></span></a>Network</h2>
+
+<p>DeepSpark supports following layered neural network implementation:</p>
+
+<ul>
+<li>
+<em>Fully-connected</em> Neural Network</li>
+<li>
+<em>Fully-connected</em> Rank-3 Tensor Network</li>
+<li>RBF Network</li>
+<li>Word Embedding Network</li>
+</ul>
+
+<h2>
+<a id="training-methodology" class="anchor" href="#training-methodology" aria-hidden="true"><span class="octicon octicon-link"></span></a>Training Methodology</h2>
+
+<p>ScalaNetwork supports following training methodologies:</p>
+
+<ul>
+<li>Stochastic Gradient Descent w/ L1-, L2-regularization, Momentum.</li>
+<li><a href="http://www.magicbroom.info/Papers/DuchiHaSi10.pdf">AdaGrad</a></li>
+<li><a href="http://www.matthewzeiler.com/pubs/googleTR2012/googleTR2012.pdf">AdaDelta</a></li>
+</ul>
+
+<p>ScalaNetwork supports following environments:</p>
+
+<ul>
+<li>Multi-Threaded Training Environment, which gets input from Spark RDD</li>
+</ul>
+
+<p>Also you can add negative examples with <code>Trainer.setNegativeSampler()</code>.</p>
+
+<h2>
+<a id="activation-function" class="anchor" href="#activation-function" aria-hidden="true"><span class="octicon octicon-link"></span></a>Activation Function</h2>
+
+<p>ScalaNetwork supports following activation functions:</p>
+
+<ul>
+<li>Linear</li>
+<li>Sigmoid</li>
+<li>HyperbolicTangent</li>
+<li>Rectifier</li>
+<li>Softplus</li>
+<li>HardSigmoid</li>
+<li>HardTanh</li>
+<li>Softmax</li>
+<li>LeakyReLU</li>
+</ul>
+
+<p>And for RBF Layer,</p>
+
+<ul>
+<li>Gaussian RBF</li>
+<li>Inverse Quadratic RBF</li>
+<li>HardGaussian RBF (= Hard Inverse Quadratic RBF)</li>
+</ul>
+
+<h1>
+<a id="usage" class="anchor" href="#usage" aria-hidden="true"><span class="octicon octicon-link"></span></a>Usage</h1>
+
+<p>Here is some examples for basic usage.</p>
+
+<h2>
+<a id="download" class="anchor" href="#download" aria-hidden="true"><span class="octicon octicon-link"></span></a>Download</h2>
+
+<p>Currently ScalaNetwork supports Scala version 2.10 ~ 2.11.</p>
+
+<ul>
+<li>Stable Release is 1.2.0</li>
+</ul>
+
+<p>If you are using SBT, add a dependency as described below:</p>
+
+<div class="highlight highlight-source-scala"><pre>libraryDependencies <span class="pl-k">+</span><span class="pl-k">=</span> <span class="pl-s"><span class="pl-pds">"</span>com.github.nearbydelta<span class="pl-pds">"</span></span> <span class="pl-k">%%</span> <span class="pl-s"><span class="pl-pds">"</span>deepspark<span class="pl-pds">"</span></span> <span class="pl-k">%</span> <span class="pl-s"><span class="pl-pds">"</span>1.2.0<span class="pl-pds">"</span></span></pre></div>
+
+<p>If you are using Maven, add a dependency as described below:</p>
+
+<div class="highlight highlight-text-xml"><pre>&lt;<span class="pl-ent">dependency</span>&gt;
+  &lt;<span class="pl-ent">groupId</span>&gt;com.github.nearbydelta&lt;/<span class="pl-ent">groupId</span>&gt;
+  &lt;<span class="pl-ent">artifactId</span>&gt;deepspark_{your.scala.version}&lt;/<span class="pl-ent">artifactId</span>&gt;
+  &lt;<span class="pl-ent">version</span>&gt;1.2.0&lt;/<span class="pl-ent">version</span>&gt;
+&lt;/<span class="pl-ent">dependency</span>&gt;</pre></div>
+
+<h2>
+<a id="examples" class="anchor" href="#examples" aria-hidden="true"><span class="octicon octicon-link"></span></a>Examples</h2>
+
+<ul>
+<li><p><a href="https://github.com/nearbydelta/deepspark/blob/master/src/test/scala/TestXOR.scala">Simple XOR Network</a></p></li>
+<li><p><a href="https://github.com/nearbydelta/deepspark/blob/master/src/test/scala/TestEmbedding.scala">Simple Word Embedding Simulation</a></p></li>
+</ul>
+        </section>
+
+        <aside id="sidebar">
+          <a href="https://github.com/nearbydelta/deepspark/zipball/master" class="button">
+            <small>Download</small>
+            .zip file
+          </a>
+          <a href="https://github.com/nearbydelta/deepspark/tarball/master" class="button">
+            <small>Download</small>
+            .tar.gz file
+          </a>
+
+          <p class="repo-owner"><a href="https://github.com/nearbydelta/deepspark"></a> is maintained by <a href="https://github.com/nearbydelta">nearbydelta</a>.</p>
+
+          <p>This page was generated by <a href="https://pages.github.com">GitHub Pages</a> using the Architect theme by <a href="https://twitter.com/jasonlong">Jason Long</a>.</p>
+        </aside>
+      </div>
+    </div>
+
+  
+  </body>
+</html>
