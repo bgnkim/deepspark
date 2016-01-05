@@ -2,8 +2,6 @@ import com.github.nearbydelta.deepspark.data._
 import com.github.nearbydelta.deepspark.layer.BasicLayer
 import com.github.nearbydelta.deepspark.network.{Network, SimpleNetwork}
 
-import scala.reflect.io.File
-
 /**
  * Created by bydelta on 15. 10. 16.
  */
@@ -17,9 +15,8 @@ object TestKryo {
 
     require(network.NOut == 1)
 
-    val file = File("testfile")
-    network.saveTo(file)
-    val net2 = Network.readFrom[SimpleNetwork[Boolean]](file)
+    network.saveTo("testfile")
+    val net2 = Network.readFrom[SimpleNetwork[Boolean]]("testfile")
 
     require(net2.NOut == 1)
     require(network.layers.size == net2.layers.size)

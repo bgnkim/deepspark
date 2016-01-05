@@ -1,5 +1,6 @@
 package com.github.nearbydelta.deepspark.train
 
+import java.io._
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -13,7 +14,6 @@ import org.apache.spark.util.SizeEstimator
 import scala.concurrent._
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
-import scala.reflect.io.File
 import scala.util.Random
 
 /**
@@ -48,8 +48,8 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
     if (param.dataOnLocal) new LocalSampler
     else new RDDSampler
   /** Temporary file path of network */
-  @transient protected val file = File(name + ".kryo")
-  @transient protected val logfile = File(name + ".csv")
+  @transient protected val file = new File(name + ".kryo")
+  @transient protected val logfile = new File(name + ".csv")
   /** Logger */
   @transient protected val logger = Logger.getLogger(this.getClass)
   /** Train set */
@@ -106,7 +106,8 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
       trainSmallBatch(epoch, patience)
       loadStatus()
       network.setUpdatable(false)
-      file.deleteIfExists()
+      if (file.exists())
+        file.delete()
 
       rootLogger.setLevel(lv)
       network
@@ -188,7 +189,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
    * Load saved status
    */
   private final def loadStatus() = {
-    val input = new Input(file.inputStream())
+    val input = new Input(new FileInputStream(file))
     val kryo = KryoWrap.get.kryo
     bestIter = input.readInt()
     prevLossE = input.readDouble()
@@ -205,7 +206,9 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
    * @param lossW Current weight loss
    */
   private final def printProgress(iter: Int, patience: Int, lossE: Double, lossW: Double): Unit = {
-    logfile.appendAll(s"$iter,$lossE,$lossW\n")
+    val bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(logfile)))
+    bw.append(s"$iter,$lossE,$lossW\n")
+    bw.close()
 
     val wait = patience / param.maxIter.toFloat
     val header = f"\033[4m$name\033[24m $iter%4d/$patience%4d \033[0m["
@@ -250,7 +253,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
    * @param path Save path
    */
   private final def saveStatus(path: File = file) = {
-    val output = new Output(path.outputStream())
+    val output = new Output(new FileOutputStream(path))
     val kryo = KryoWrap.get.kryo
     output.writeInt(bestIter)
     output.writeDouble(prevLossE)

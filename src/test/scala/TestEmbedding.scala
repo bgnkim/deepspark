@@ -9,7 +9,6 @@ import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.collection.mutable
-import scala.reflect.io.File
 
 /**
  * Created by bydelta on 15. 10. 16.
@@ -91,9 +90,8 @@ object TestEmbedding {
         .build(network, data, data, SquaredErr, "EmbeddingTest")
         .getTrainedNetwork
 
-      val file = File("testfile")
-      trained.saveTo(file)
-      val net2 = Network.readFrom[GeneralNetwork[Array[Int], DataVec]](file)
+      trained.saveTo("testfile")
+      val net2 = Network.readFrom[GeneralNetwork[Array[Int], DataVec]]("testfile")
       val newA = net2.inputLayer.asInstanceOf[RNNLedger].model.apply("A")
 
       (0 until 10).foreach { _ ⇒

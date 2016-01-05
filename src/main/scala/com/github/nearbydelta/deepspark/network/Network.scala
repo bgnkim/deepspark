@@ -1,5 +1,7 @@
 package com.github.nearbydelta.deepspark.network
 
+import _root_.java.io.{File, FileInputStream, FileOutputStream}
+
 import com.esotericsoftware.kryo.KryoSerializable
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.github.nearbydelta.deepspark.data._
@@ -13,7 +15,6 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.parallel.ParSeq
 import scala.reflect.ClassTag
-import scala.reflect.io.{File, Path}
 
 
 /**
@@ -123,9 +124,9 @@ trait Network[In, Out] extends Serializable with KryoSerializable {
    * Save this network.
    * @param file Save path of this network.
    */
-  def saveTo(file: Path) =
+  def saveTo(file: String) =
     try {
-      val output = new Output(File(file).outputStream())
+      val output = new Output(new FileOutputStream(new File(file)))
       KryoWrap.get.kryo.writeClassAndObject(output, this)
       output.close()
     } catch {
@@ -231,8 +232,8 @@ object Network {
    * @tparam T Type of network.
    * @return Restored network.
    */
-  def readFrom[T <: Network[_, _]](file: Path) = {
-    val input = new Input(File(file).inputStream())
+  def readFrom[T <: Network[_, _]](file: String) = {
+    val input = new Input(new FileInputStream(file))
     val obj = KryoWrap.get.kryo.readClassAndObject(input).asInstanceOf[T]
     input.close()
     obj

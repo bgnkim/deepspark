@@ -1,5 +1,7 @@
 package com.github.nearbydelta.deepspark.word
 
+import java.io._
+
 import breeze.linalg.DenseVector
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, KryoSerializable}
@@ -7,8 +9,7 @@ import com.github.nearbydelta.deepspark.data._
 import org.apache.log4j.Logger
 
 import scala.collection.mutable
-import scala.io.Codec
-import scala.reflect.io.{File, Path}
+import scala.io.{Codec, Source}
 
 /**
  * Class for word list, or ledger words.
@@ -107,9 +108,9 @@ class LedgerModel extends Serializable with KryoSerializable {
    * Save ledger model into text file
    * @param file Save path
    */
-  def saveAsTextFile(file: Path) =
+  def saveAsTextFile(file: String) =
     try {
-      val bos = File(file).bufferedWriter()
+      val bos = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file)))
       map.words.foreach {
         case (word, id) ⇒
           val vec = vectors(id)
@@ -124,9 +125,9 @@ class LedgerModel extends Serializable with KryoSerializable {
    * Save ledger model into kryo file
    * @param file Save path
    */
-  def saveTo(file: Path) =
+  def saveTo(file: String) =
     try {
-      val oos = new Output(File(file).outputStream())
+      val oos = new Output(new FileOutputStream(file))
       this.write(KryoWrap.get.kryo, oos)
       oos.close()
     } catch {
@@ -192,7 +193,7 @@ object LedgerModel {
    * @param path Path of file
    * @return LedgerModel
    */
-  def read(path: Path): LedgerModel = read(File(path))
+  def read(path: String): LedgerModel = read(new File(path))
 
   /**
    * Read model from path. File can be white-space splited text list.
@@ -200,9 +201,9 @@ object LedgerModel {
    * @return LedgerModel
    */
   def read(file: File): LedgerModel = {
-    val path = file.path + ".obj"
-    if (File(path).exists) {
-      val in = new Input(File(path).inputStream())
+    val path = new File(file.getPath + ".obj")
+    if (path.exists) {
+      val in = new Input(new FileInputStream(path))
       val model = new LedgerModel
       model.read(KryoWrap.get.kryo, in)
       in.close()
@@ -210,7 +211,7 @@ object LedgerModel {
       logger info s"READ Embedding Vectors finished (Dimension ${model.dimension}, Size ${model.size})"
       model
     } else {
-      val br = file.lines(Codec.UTF8)
+      val br = Source.fromFile(file)(Codec.UTF8).getLines()
 
       val wordmap = new LedgerWords()
       val vectors = mutable.ArrayBuffer[DataVec]()
@@ -220,7 +221,7 @@ object LedgerModel {
 
       while (br.hasNext) {
         if (lineNo % 10000 == 0)
-          logger info f"READ GloVe file (${file.name}) : $lineNo%9d"
+          logger info f"READ GloVe file (${file.getName}) : $lineNo%9d"
 
         val line = br.next()
         val splits = line.trim().split("\\s+")
@@ -268,7 +269,7 @@ object LedgerModel {
 
       val model = new LedgerModel().set(wordmap, vectors)
       logger info s"Start to save GloVe (Dimension ${model.dimension}, Size ${model.size})"
-      model.saveTo(path)
+      model.saveTo(path.getPath)
 
       logger info s"READ Embedding Vectors finished (Dimension ${model.dimension}, Size ${model.size})"
       model
