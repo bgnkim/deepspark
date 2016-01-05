@@ -16,8 +16,8 @@ import com.github.nearbydelta.deepspark.data._
  */
 class FullTensorLayer extends Rank3TensorLayer {
   override def withInput(in: Int): this.type = {
-    fanInA = NIn
-    fanInB = NIn
+    fanInA = in
+    fanInB = in
     super.withInput(in)
   }
 

@@ -37,8 +37,11 @@ class RNNLedger(var layer: TransformLayer)
       }
 
       buffer
-    } else
+    } else if (NOut == dimension)
       mutable.Stack(pad)
+    else
+      mutable.Stack(DenseVector.zeros[Double](NOut))
+
   }
 
   override def backprop(seq: ParSeq[((Array[Int], mutable.Stack[DataVec]), DataVec)]): (ParSeq[DataVec], ParSeq[() ⇒ Unit]) = {
@@ -68,8 +71,9 @@ class RNNLedger(var layer: TransformLayer)
             updateWord(curr, error)
           }
         }
-      } else
+      } else if (NOut == dimension) {
         updateWord(padID, err)
+      }
 
       buf
     }
@@ -93,9 +97,14 @@ class RNNLedger(var layer: TransformLayer)
   }
 
   override def withModel(model: LedgerModel, builder: LedgerBuilder): this.type = {
-    NOut = model.dimension
-    layer.withInput(model.dimension * 2)
-    layer.withOutput(model.dimension)
+    if (layer.NOut == 0) {
+      NOut = model.dimension
+      layer.withInput(model.dimension * 2)
+      layer.withOutput(model.dimension)
+    } else {
+      NOut = layer.NOut
+      layer.withInput(model.dimension + layer.NOut)
+    }
     layer.setUpdatable(false)
     super.withModel(model, builder)
   }

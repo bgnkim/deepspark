@@ -49,6 +49,7 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
     else new RDDSampler
   /** Temporary file path of network */
   @transient protected val file = File(name + ".kryo")
+  @transient protected val logfile = File(name + ".csv")
   /** Logger */
   @transient protected val logger = Logger.getLogger(this.getClass)
   /** Train set */
@@ -204,6 +205,8 @@ trait Trainer[IN, EXP, OUT] extends Serializable {
    * @param lossW Current weight loss
    */
   private final def printProgress(iter: Int, patience: Int, lossE: Double, lossW: Double): Unit = {
+    logfile.appendAll(s"$iter,$lossE,$lossW\n")
+
     val wait = patience / param.maxIter.toFloat
     val header = f"\033[4m$name\033[24m $iter%4d/$patience%4d \033[0m["
     val footer = f" E + W = $lossE%7.5f + $lossW%7.5f "

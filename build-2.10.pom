@@ -1,0 +1,52 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
+         xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.github.nearbydelta</groupId>
+    <artifactId>deepspark_2.10</artifactId>
+    <packaging>jar</packaging>
+    <description>DeepSpark</description>
+    <url>http://nearbydelta.github.io/DeepSpark</url>
+    <version>1.2.0</version>
+    <licenses>
+        <license>
+            <name>GNU General Public License v2</name>
+            <url>http://www.gnu.org/licenses/gpl-2.0.html</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <name>DeepSpark</name>
+    <organization>
+        <name>com.github.nearbydelta</name>
+        <url>http://nearbydelta.github.io/DeepSpark</url>
+    </organization>
+    <scm>
+        <url>git@github.com:nearbydelta/DeepSpark.git</url>
+        <connection>scm:git:git@github.com:nearbydelta/DeepSpark.git</connection>
+    </scm>
+    <developers>
+        <developer>
+            <id>nearbydelta</id>
+            <name>Bugeun Kim</name>
+            <url>http://bydelta.kr</url>
+        </developer>
+    </developers>
+    <dependencies>
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>scala-library</artifactId>
+            <version>2.10.6</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-core_2.10</artifactId>
+            <version>1.5.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-mllib_2.10</artifactId>
+            <version>1.5.1</version>
+        </dependency>
+    </dependencies>
+</project>

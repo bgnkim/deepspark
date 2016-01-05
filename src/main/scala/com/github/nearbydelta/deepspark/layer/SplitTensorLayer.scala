@@ -25,7 +25,7 @@ class SplitTensorLayer extends Rank3TensorLayer {
   def withSplit(head: Int, tail: Int): this.type = {
     fanInA = head
     fanInB = tail
-    NIn = head + tail
+    super.withInput(head + tail)
     this
   }
 
